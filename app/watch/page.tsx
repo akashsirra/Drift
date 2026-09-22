@@ -15,7 +15,7 @@ function P(){
   if(isHls){
    if(Hls.isSupported()){
     const h=new Hls({enableWorker:false});
-    h.loadSource(u);h.attachMedia(v);
+    h.loadSource("/api/media/proxy?url="+encodeURIComponent(u));h.attachMedia(v);
     h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal)setError("HLS playback failed. The source may require authorization or headers that a browser cannot supply.")});
     return()=>h.destroy();
    }
