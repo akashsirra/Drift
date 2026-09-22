@@ -5,7 +5,7 @@ import {useSearchParams} from "next/navigation";
 import Hls from "hls.js";
 
 function P(){
- const p=useSearchParams(),u=p.get("url")||"",t=p.get("title")||"Drift Player";
+ const p=useSearchParams(),u=p.get("url")||"",t=p.get("title")||"Drift Player",ph=p.get("ph")||"";
  const videoRef=useRef<HTMLVideoElement|null>(null);
  const [error,setError]=useState("");
  const isHls=/\.m3u8(\?|$)/i.test(u),isMedia=/\.(mp4|webm|ogg)(\?|$)/i.test(u);
@@ -15,7 +15,7 @@ function P(){
   if(isHls){
    if(Hls.isSupported()){
     const h=new Hls({enableWorker:false});
-    h.loadSource("/api/media/proxy?url="+encodeURIComponent(u));h.attachMedia(v);
+    h.loadSource("/api/media/proxy?url="+encodeURIComponent(u)+(ph?"&ph="+encodeURIComponent(ph):""));h.attachMedia(v);
     h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal)setError("HLS playback failed. The source may require authorization or headers that a browser cannot supply.")});
     return()=>h.destroy();
    }
