@@ -2,6 +2,29 @@
 import {Suspense,useEffect,useMemo,useRef,useState} from "react";
 import {useSearchParams} from "next/navigation";
 import Hls from "hls.js";
+
+type DownloadJob={id:string;title:string;url:string;type:"direct"|"hls";status:"queued"|"downloading"|"complete"|"failed";progress:number;createdAt:number;size?:number;blobUrl?:string;error?:string};
+
+const DOWNLOAD_KEY="drift-downloads";
+function loadDownloads():DownloadJob[]{try{return JSON.parse(localStorage.getItem(DOWNLOAD_KEY)||"[]")}catch{return[]}}
+function saveDownloads(x:DownloadJob[]){localStorage.setItem(DOWNLOAD_KEY,JSON.stringify(x.map(({blobUrl,...j})=>j)))}
+function proxyUrl(raw:string,ph:string){return "/api/media/proxy?url="+encodeURIComponent(raw)+(ph?"&ph="+encodeURIComponent(ph):"")}
+async function downloadMedia(job:DownloadJob,ph:string,onUpdate:(p:number)=>void){
+ const src=job.type==="hls"?proxyUrl(job.url,ph):proxyUrl(job.url,ph);
+ if(job.type==="direct"){
+   const r=await fetch(src);if(!r.ok)throw Error("Download request failed ("+r.status+")");
+   const total=Number(r.headers.get("content-length")||0);let done=0;const reader=r.body?.getReader();const chunks:Uint8Array[]=[];
+   if(reader){for(;;){const x=await reader.read();if(x.done)break;if(x.value){chunks.push(x.value);done+=x.value.byteLength;if(total)onUpdate(Math.min(99,done/total*100))}}}
+   const blob=new Blob(chunks,{type:r.headers.get("content-type")||"video/mp4"});return URL.createObjectURL(blob);
+ }
+ const playlist=await (await fetch(src)).text();
+ if(/#EXT-X-MAP:/i.test(playlist))throw Error("This HLS stream uses fragmented MP4; HLS download for this format is not available yet.");
+ const lines=playlist.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);const segs=lines.filter(x=>!x.startsWith("#"));
+ if(!segs.length)throw Error("No HLS segments found.");
+ const base=new URL(job.url);const chunks:BlobPart[]=[];
+ for(let i=0;i<segs.length;i++){const u=new URL(segs[i],base).toString();const rr=await fetch(proxyUrl(u,ph));if(!rr.ok)throw Error("Segment "+(i+1)+" failed ("+rr.status+")");chunks.push(await rr.blob());onUpdate(Math.min(99,((i+1)/segs.length)*100))}
+ return URL.createObjectURL(new Blob(chunks,{type:"video/mp2t"}));
+}
 type Subtitle={url:string;lang?:string;label?:string;id?:string};
 type Level={height:number;bitrate:number};
 function P(){
@@ -23,6 +46,13 @@ function P(){
  return()=>{v.removeEventListener("timeupdate",onTime);v.removeEventListener("play",onPlay);v.removeEventListener("pause",onPause);v.removeEventListener("loadedmetadata",onLoaded);v.removeEventListener("ended",onEnded);v.removeEventListener("error",onVideoError)};
  },[active,isHls,isMedia,activePh,progressKey,t,type,poster,subs,fallbackIndex,candidates.length,resume,nextId]);
  useEffect(()=>{if(!nextCountdown)return;const timer=setTimeout(()=>{if(nextCountdown<=1)goNext();else setNextCountdown(x=>x-1)},1000);return()=>clearTimeout(timer)},[nextCountdown]);
+ async function startDownload(){
+  const hls=isHls;const job:DownloadJob={id:crypto.randomUUID(),title:t,url:active,type:hls?"hls":"direct",status:"queued",progress:0,createdAt:Date.now()};
+  const all=[job,...loadDownloads()];saveDownloads(all);setNoticeForDownload(job.id,"downloading");
+  try{const blobUrl=await downloadMedia(job,activePh,p=>updateDownload(job.id,{status:"downloading",progress:p}));const done=loadDownloads().find(x=>x.id===job.id);updateDownload(job.id,{status:"complete",progress:100});const a=document.createElement("a");a.href=blobUrl;a.download=safeFileName(t)+(hls?".ts":guessExt(active));a.click();setTimeout(()=>URL.revokeObjectURL(blobUrl),60000);if(done){} }catch(e){updateDownload(job.id,{status:"failed",progress:0,error:e instanceof Error?e.message:"Download failed"})}
+ }
+ function updateDownload(id:string,patch:Partial<DownloadJob>){const next=loadDownloads().map(x=>x.id===id?{...x,...patch}:x);saveDownloads(next)}
+ function setNoticeForDownload(id:string,status:"downloading"){updateDownload(id,{status,progress:0})}
  async function goNext(){if(!nextId||nextLoading)return;setNextLoading(true);try{const rs=await Promise.all(addonUrls.map(async a=>{try{const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a)+"&resource=stream&type="+type+"&id="+encodeURIComponent(nextId));if(!r.ok)return[];const j=await r.json();return j.streams||[]}catch{return[]}}));const all=rs.flat().filter((s:any)=>s?.url);if(!all.length){setError("Next episode has no playable stream.");setNextCountdown(0);return}localStorage.setItem("drift-stream-candidates",JSON.stringify(all.slice(0,12)));const s=all[0],h=s.behaviorHints||{},sp=new URLSearchParams({url:s.url,title:nextTitle||"Next episode",ph:btoa(JSON.stringify(h.proxyHeaders?.request||{})),id,type,poster,subs:btoa(JSON.stringify(s.subtitles||[])),episodeId:nextId,season:nextSeason,episode:nextEpisode,nextId:"",nextTitle:"",nextSeason:"",nextEpisode:"",addons:btoa(JSON.stringify(addonUrls))});window.location.href="/watch?"+sp.toString()}finally{setNextLoading(false)}}
  async function togglePlay(){const v=videoRef.current;if(!v)return;if(v.paused)await v.play();else v.pause();touchControls()}
  function seek(delta:number){const v=videoRef.current;if(v){v.currentTime=Math.max(0,Math.min(v.duration||0,v.currentTime+delta));touchControls()}}
@@ -33,9 +63,11 @@ function P(){
  return <main className="watch"><a className="back" href="/">← Drift</a><div className="watchTitle"><h1>{t}</h1>{type==="series"&&season&&episode?<span className="episodeBadge">S{season} E{episode}</span>:null}{fallbackName&&<span>{fallbackName}</span>}</div>
  <div className="playerShell" onMouseMove={touchControls} onTouchStart={touchControls}>
  {isHls||isMedia?<video ref={videoRef} className="video" playsInline preload="metadata" poster={poster} onClick={togglePlay}/>:<div className="playerNotice"><h2>Stream resolved</h2><p>This stream uses a transport Drift browser player does not support yet.</p><code>{u}</code></div>}
- {(isHls||isMedia)&&showControls&&<div className="controlsOverlay"><div className="seekRow"><button onClick={()=>seek(-10)}>↶ 10</button><button className="bigPlay" onClick={togglePlay}>{playing?"❚❚":"▶"}</button><button onClick={()=>seek(10)}>10 ↷</button></div><input className="seekBar" type="range" min="0" max={duration||0.1} step="0.1" value={Math.min(current,duration||0)} onChange={e=>{const v=videoRef.current;if(v)v.currentTime=Number(e.target.value);touchControls()}}/><div className="controlBar"><button onClick={togglePlay}>{playing?"❚❚":"▶"}</button><span>{fmt(current)} / {fmt(duration)}</span><label>🔊<input className="volume" type="range" min="0" max="1" step="0.05" value={volume} onChange={e=>{const x=Number(e.target.value);setVolume(x);if(videoRef.current)videoRef.current.volume=x}}/></label>{levels.length>1&&<div className="menuBox"><button onClick={()=>setMenu(menu==="quality"?null:"quality")}>{level<0?"Auto":(levels[level]?.height?levels[level].height+"p":"Quality")}</button>{menu==="quality"&&<div className="popMenu"><button onClick={()=>changeQuality(-1)}>Auto</button>{levels.map((x,i)=><button key={i} onClick={()=>changeQuality(i)}>{x.height?x.height+"p":Math.round(x.bitrate/1000)+" kbps"}</button>)}</div>}</div>}<div className="menuBox"><button onClick={()=>setMenu(menu==="speed"?null:"speed")}>{speed}×</button>{menu==="speed"&&<div className="popMenu"><button onClick={()=>chooseSpeed(.75)}>.75×</button><button onClick={()=>chooseSpeed(1)}>1×</button><button onClick={()=>chooseSpeed(1.25)}>1.25×</button><button onClick={()=>chooseSpeed(1.5)}>1.5×</button><button onClick={()=>chooseSpeed(2)}>2×</button></div>}</div>{subs.length>0&&<div className="menuBox"><button onClick={()=>setMenu(menu==="cc"?null:"cc")}>CC</button>{menu==="cc"&&<div className="popMenu">{subs.map((s,i)=><button key={s.id||i} onClick={()=>chooseSubtitle(s)}>{s.label||s.lang||"Subtitle "+(i+1)}</button>)}</div>}</div>}<button onClick={toggleFullscreen}>{fullscreen?"⤢":"⛶"}</button>{isMedia&&<a className="downloadBtn" href={"/api/media/download?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):"")+"&name="+encodeURIComponent(t.replace(/[^a-z0-9\-_ ]/gi,"").trim()||"Drift")} download>⇩</a>}</div></div>}
+ {(isHls||isMedia)&&showControls&&<div className="controlsOverlay"><div className="seekRow"><button onClick={()=>seek(-10)}>↶ 10</button><button className="bigPlay" onClick={togglePlay}>{playing?"❚❚":"▶"}</button><button onClick={()=>seek(10)}>10 ↷</button></div><input className="seekBar" type="range" min="0" max={duration||0.1} step="0.1" value={Math.min(current,duration||0)} onChange={e=>{const v=videoRef.current;if(v)v.currentTime=Number(e.target.value);touchControls()}}/><div className="controlBar"><button onClick={togglePlay}>{playing?"❚❚":"▶"}</button><span>{fmt(current)} / {fmt(duration)}</span><label>🔊<input className="volume" type="range" min="0" max="1" step="0.05" value={volume} onChange={e=>{const x=Number(e.target.value);setVolume(x);if(videoRef.current)videoRef.current.volume=x}}/></label>{levels.length>1&&<div className="menuBox"><button onClick={()=>setMenu(menu==="quality"?null:"quality")}>{level<0?"Auto":(levels[level]?.height?levels[level].height+"p":"Quality")}</button>{menu==="quality"&&<div className="popMenu"><button onClick={()=>changeQuality(-1)}>Auto</button>{levels.map((x,i)=><button key={i} onClick={()=>changeQuality(i)}>{x.height?x.height+"p":Math.round(x.bitrate/1000)+" kbps"}</button>)}</div>}</div>}<div className="menuBox"><button onClick={()=>setMenu(menu==="speed"?null:"speed")}>{speed}×</button>{menu==="speed"&&<div className="popMenu"><button onClick={()=>chooseSpeed(.75)}>.75×</button><button onClick={()=>chooseSpeed(1)}>1×</button><button onClick={()=>chooseSpeed(1.25)}>1.25×</button><button onClick={()=>chooseSpeed(1.5)}>1.5×</button><button onClick={()=>chooseSpeed(2)}>2×</button></div>}</div>{subs.length>0&&<div className="menuBox"><button onClick={()=>setMenu(menu==="cc"?null:"cc")}>CC</button>{menu==="cc"&&<div className="popMenu">{subs.map((s,i)=><button key={s.id||i} onClick={()=>chooseSubtitle(s)}>{s.label||s.lang||"Subtitle "+(i+1)}</button>)}</div>}</div>}<button onClick={toggleFullscreen}>{fullscreen?"⤢":"⛶"}</button>{(isMedia||isHls)&&<button className="downloadBtn" onClick={startDownload}>⇩</button>}</div></div>}
  {nextCountdown>0&&<div className="nextOverlay"><strong>Next episode in {nextCountdown}</strong><span>{nextTitle}</span><div><button onClick={goNext} disabled={nextLoading}>{nextLoading?"Loading…":"Play now"}</button><button onClick={()=>setNextCountdown(0)}>Cancel</button></div></div>}
  </div>{resume>0&&<p className="resumeNote">Resuming from {fmt(resume)}</p>}{error&&<div className="playerNotice"><h2>Playback error</h2><p>{error}</p><code>{u}</code></div>}</main>
 }
+function safeFileName(x:string){return (x.replace(/[^a-z0-9._ -]/gi,"").trim()||"Drift").slice(0,80)}
+function guessExt(u:string){const m=u.match(/\.(mp4|webm|ogg)(?:\?|$)/i);return m?"."+m[1].toLowerCase():".mp4"}
 function fmt(n:number){if(!Number.isFinite(n)||n<0)return "0:00";const h=Math.floor(n/3600),m=Math.floor(n%3600/60),s=Math.floor(n%60);return h?(h+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")):(m+":"+String(s).padStart(2,"0"))}
 export default function Watch(){return <Suspense fallback={<main className="watch">Loading…</main>}><P/></Suspense>}
