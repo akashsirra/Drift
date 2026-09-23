@@ -11,11 +11,11 @@ function P(){
  const videoRef=useRef<HTMLVideoElement|null>(null);
  const [error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0),[fallbackIndex,setFallbackIndex]=useState(0),[fallbackName,setFallbackName]=useState("");
  const subs=useMemo<Subtitle[]>(()=>{try{return JSON.parse(atob(p.get("subs")||""))||[]}catch{return[]}},[p]);
- const isHls=/\.m3u8(\?|$)/i.test(active),isMedia=/\.(mp4|webm|ogg)(\?|$)/i.test(active);
  const progressKey=episodeId?(type+":"+episodeId):(id?(type+":"+id):("url:"+u));
  const [candidates,setCandidates]=useState<{url:string;name?:string;title?:string;behaviorHints?:Record<string,unknown>}[]>([]);
  useEffect(()=>{try{const x=JSON.parse(localStorage.getItem("drift-stream-candidates")||"[]");if(Array.isArray(x))setCandidates(x.filter((s:any)=>s?.url))}catch{}},[]);
  const active=candidates[fallbackIndex]?.url||u; const activeHints:any=candidates[fallbackIndex]?.behaviorHints||{}; const activePh=fallbackIndex&&activeHints.proxyHeaders?.request?btoa(JSON.stringify(activeHints.proxyHeaders.request)):ph;
+ const isHls=/\\.m3u8(\\?|$)/i.test(active),isMedia=/\\.(mp4|webm|ogg)(\\?|$)/i.test(active);
 
  useEffect(()=>{const raw=localStorage.getItem("drift-progress");try{const all=raw?JSON.parse(raw):{};const item=all[progressKey];if(item?.position>5&&item?.position<Math.max(item.duration-30,0))setResume(item.position)}catch{}},[progressKey]);
 
