@@ -1,14 +1,16 @@
-import {Suspense} from "react";
-import DriftPlayer from "./player";
+"use client";
 
-function WatchFallback(){
-  return <main className="watch"><div className="videoPlaceholder" aria-label="Loading player" /></main>;
-}
+import dynamic from "next/dynamic";
+
+const DriftPlayer = dynamic(() => import("./player"), {
+  ssr: false,
+  loading: () => (
+    <main className="watch">
+      <div className="videoPlaceholder" aria-label="Loading player" />
+    </main>
+  ),
+});
 
 export default function WatchPage(){
-  return (
-    <Suspense fallback={<WatchFallback/>}>
-      <DriftPlayer/>
-    </Suspense>
-  );
+  return <DriftPlayer />;
 }
