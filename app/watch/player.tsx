@@ -76,7 +76,7 @@ setError(activeSource+" failed. Refreshing stream candidates…");
 refreshStreamCandidates().then(ok=>{
   if(!ok)setError("HLS playback failed. No other fresh candidate was returned.");
 })}});return()=>{h.destroy();hlsRef.current=null}}if(v.canPlayType("application/vnd.apple.mpegurl"))v.src=active;else setError("This browser does not support HLS playback.")}else if(isMkv){
- const src="/api/media/mkv?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):"");
+ const src="/api/media/download?mode=play&url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):"");
  v.src=src;
  v.load();
  v.play().catch(()=>{});
