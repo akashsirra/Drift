@@ -80,20 +80,33 @@ export default function Home(){
         return {addon:x.name,streams:raw.map((s:Stream)=>({...s,__addon:x.name}))};
       }catch{return {addon:x.name,streams:[] as Stream[]}}
     });
-    const deadline=new Promise<{addon:string;streams:Stream[]}>((resolve)=>setTimeout(()=>resolve({addon:"",streams:[]}),16000));
-    const firstPlayable=Promise.race([
-      ...pending.map(p=>p.then(result=>result.streams.some(s=>Boolean(s.url))?result:new Promise<{addon:string;streams:Stream[]}>(resolve=>{
-        const poll=setInterval(()=>{},1000000);
-        void poll;
-        p.then(()=>resolve(result)).catch(()=>resolve(result));
-      }))),
-      deadline
-    ]);
-    let winner=await firstPlayable;
-    if(!winner.streams.length){
-      const results=await Promise.all(pending);
-      winner=results.find(r=>r.streams.length>0)||{addon:"",streams:[]};
-    }
+    const firstPlayable=new Promise<{addon:string;streams:Stream[]}>(resolve=>{
+      let remaining=pending.length;
+      let done=false;
+      for(const p of pending){
+        p.then(result=>{
+          if(done)return;
+          if(result.streams.some(s=>Boolean(s.url))){
+            done=true;
+            resolve(result);
+            return;
+          }
+          remaining--;
+          if(remaining===0){
+            done=true;
+            resolve({addon:"",streams:[]});
+          }
+        }).catch(()=>{
+          remaining--;
+          if(!done&&remaining===0){
+            done=true;
+            resolve({addon:"",streams:[]});
+          }
+        });
+      }
+    });
+    const timeout=new Promise<{addon:string;streams:Stream[]}>(resolve=>setTimeout(()=>resolve({addon:"",streams:[]}),16000));
+    const winner=await Promise.race([firstPlayable,timeout]);
     const merged=winner.streams;
     setStreams(merged);
     const playable=merged.filter((s:Stream)=>Boolean(s.url)).length;
