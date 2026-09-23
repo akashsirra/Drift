@@ -61,9 +61,7 @@ export async function GET(req:NextRequest){
         await runFfmpeg(args,out);
         const info=await stat(out);
         if(info.size<1024*10)throw new Error("FFmpeg produced an unexpectedly small MP4 ("+info.size+" bytes).");
-        const stream=Readable.toWeb(createReadStream(out)) as ReadableStream<Uint8Array>;
         const cleanup=()=>rm(dir,{recursive:true,force:true}).catch(()=>{});
-        stream.getReader().read().then(()=>{}).catch(()=>{});
         return new NextResponse(new ReadableStream({
           start(controller){
             const rs=createReadStream(out);
