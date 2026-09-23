@@ -52,7 +52,7 @@ export async function GET(req:NextRequest){
           "-user_agent",ua,
           ...(headerLines?["-headers",headerLines+"\r\n"]:[]),
           "-i",target.toString(),
-          "-map","0:v:0?","-map","0:a:0?",
+          "-map","0:v:0?","-map","0:a?",
           "-c:v","copy",
           "-c:a","copy",
           "-movflags","+faststart",
