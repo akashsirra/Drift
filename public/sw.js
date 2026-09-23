@@ -1,5 +1,5 @@
-const CACHE="drift-shell-v3";
-const SHELL=["/","/library","/addons","/downloads"];
+const CACHE="drift-shell-v4";
+const SHELL=["/","/library","/addons"];
 
 self.addEventListener("install",(event)=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).catch(()=>{}));
