@@ -10,6 +10,32 @@ type Stream={name?:string;title?:string;url?:string;ytId?:string;infoHash?:strin
 const KEY="drift-addons",LIB="drift-library";
 
 function normalizeAddonUrl(value:string){const v=value.trim();if(v.startsWith("stremio://"))return "https://"+v.slice("stremio://".length);return v}
+function streamExpiryMs(raw:string){
+ try{
+  const u=new URL(raw);
+  for(const key of ["e","exp","expires","expiry","kx"]){
+   const value=u.searchParams.get(key);
+   if(!value)continue;
+   const n=Number(value);
+   if(!Number.isFinite(n))continue;
+   const ms=n<100000000000?n*1000:n;
+   if(ms>0)return ms;
+  }
+ }catch{}
+ return 0;
+}
+function streamIsFresh(raw?:string){
+ if(!raw)return false;
+ const exp=streamExpiryMs(raw);
+ return !exp||exp>Date.now()+15000;
+}
+async function fetchAddonStreams(addon:string,type:string,id:string){
+ const q="_fresh="+Date.now()+"_"+Math.random().toString(36).slice(2);
+ const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(addon)+"&resource=stream&type="+encodeURIComponent(type)+"&id="+encodeURIComponent(id)+"&"+q,{cache:"no-store"});
+ if(!r.ok)return [];
+ const j=await r.json();
+ return Array.isArray(j.streams)?j.streams:[];
+}
 function watchHref(s:Stream,title:string,meta?:Meta,addons:Addon[]=[]){const hints:any=s.behaviorHints||{};const subs=(hints.subtitles||hints.subtitle||s.subtitles||[]);const videoId=s.__videoId||(hints as any).videoId||((s as any).season!=null&&(s as any).episode!=null?meta?.id+":"+((s as any).season)+":"+((s as any).episode):"");const sSeason=s.__season??(s as any).season;const sEpisode=s.__episode??(s as any).episode;const idx=meta?.videos?.findIndex(v=>v.id===videoId||(sSeason!=null&&sEpisode!=null&&v.season===sSeason&&v.episode===sEpisode))??-1;const next=meta?.videos&&idx>=0?meta.videos[idx+1]:undefined;const streamAddonUrls=addons.filter(a=>Array.isArray(a.resources)&&a.resources.some((r:any)=>r==="stream"||(r?.name==="stream"))).map(a=>a.url);const params=new URLSearchParams({url:s.url||"",title,ph:btoa(JSON.stringify(hints.proxyHeaders?.request||{})),id:meta?.id||"",type:meta?.type||"",poster:meta?.poster||"",subs:btoa(JSON.stringify(subs)),episodeId:videoId,season:String(sSeason??""),episode:String(sEpisode??""),nextId:next?.id||"",nextTitle:next?.title||"",nextSeason:String(next?.season??""),nextEpisode:String(next?.episode??""),addons:btoa(JSON.stringify(streamAddonUrls))});return "/watch?"+params.toString()}
 
 export default function Home(){
@@ -43,18 +69,16 @@ export default function Home(){
     if(!streamAddons.length){setNotice("No stream addon is installed. Install a stream-capable addon to get Play options.");return}
     const results=await Promise.all(streamAddons.map(async x=>{
       try{
-        const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(x.url)+"&resource=stream&type="+full.type+"&id="+encodeURIComponent(full.id));
-        if(!r.ok)return [];
-        const j=await r.json();
-        return (j.streams||[]).map((s:Stream)=>({...s,__addon:x.name}));
+        const raw=await fetchAddonStreams(x.url,full.type,full.id);
+        return raw.filter((s:Stream)=>streamIsFresh(s.url)).map((s:Stream)=>({...s,__addon:x.name}));
       }catch{return []}
     }));
     const merged=results.flat();setStreams(merged);
     setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this title.");
   }catch(e){setError(e instanceof Error?e.message:"Failed to resolve title")}
- } async function resolveStreamsFor(m:Meta,requestId?:string,titleOverride?:string){setStreams([]);setError("");setNotice("");const providers=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!providers.length){setNotice("No stream addon is installed.");return}const requestedId=requestId||m.id;const video=m.videos?.find(v=>v.id===requestedId);const results=await Promise.all(providers.map(async x=>{try{const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(x.url)+"&resource=stream&type="+m.type+"&id="+encodeURIComponent(requestedId));if(!r.ok)return[];const j=await r.json();return(j.streams||[]).map((s:Stream)=>({...s,__addon:x.name,__videoId:requestedId,__season:video?.season,__episode:video?.episode}))}catch{return[]}}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this episode.");if(titleOverride)setSelected({...m,name:titleOverride})}
+ } async function resolveStreamsFor(m:Meta,requestId?:string,titleOverride?:string){setStreams([]);setError("");setNotice("");const providers=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!providers.length){setNotice("No stream addon is installed.");return}const requestedId=requestId||m.id;const video=m.videos?.find(v=>v.id===requestedId);const results=await Promise.all(providers.map(async x=>{try{const raw=await fetchAddonStreams(x.url,m.type,requestedId);return raw.filter((s:Stream)=>streamIsFresh(s.url)).map((s:Stream)=>({...s,__addon:x.name,__videoId:requestedId,__season:video?.season,__episode:video?.episode}))}catch{return[]}}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this episode.");if(titleOverride)setSelected({...m,name:titleOverride})}
  async function openEpisode(m:Meta,v:{id:string;title:string;season?:number;episode?:number}){await resolveStreamsFor(m,v.id,m.name+" — "+v.title)}
- async function resolveId(){if(!testId.trim()){setError("Enter a movie/series ID, for example an IMDb tt ID.");return}setError("");setNotice("");setTesting(true);setStreams([]);const streamAddons=addons.filter(a=>Array.isArray(a.resources)&&a.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!streamAddons.length){setError("Install a stream-capable addon first.");setTesting(false);return}try{const results=await Promise.all(streamAddons.map(async a=>{const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a.url)+"&resource=stream&type="+testType+"&id="+encodeURIComponent(testId.trim()));if(!r.ok)return [];const j=await r.json();return (j.streams||[]).map((s:Stream)=>({...s,__addon:a.name}))}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Found "+merged.length+" stream(s) across installed addons.":"No streams were returned for that ID.")}catch(e){setError(e instanceof Error?e.message:"Stream resolution failed")}finally{setTesting(false)}}
+ async function resolveId(){if(!testId.trim()){setError("Enter a movie/series ID, for example an IMDb tt ID.");return}setError("");setNotice("");setTesting(true);setStreams([]);const streamAddons=addons.filter(a=>Array.isArray(a.resources)&&a.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!streamAddons.length){setError("Install a stream-capable addon first.");setTesting(false);return}try{const results=await Promise.all(streamAddons.map(async a=>{const raw=await fetchAddonStreams(a.url,testType,testId.trim());return raw.filter((s:Stream)=>streamIsFresh(s.url)).map((s:Stream)=>({...s,__addon:a.name}))}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Found "+merged.length+" fresh stream(s) across installed addons.":"No fresh playable streams were returned for that ID.")}catch(e){setError(e instanceof Error?e.message:"Stream resolution failed")}finally{setTesting(false)}}
  function library(){if(!selected)return;const old=JSON.parse(localStorage.getItem(LIB)||"[]");if(!old.some((x:Meta)=>x.id===selected.id))localStorage.setItem(LIB,JSON.stringify([...old,selected]));setNotice("Added to Library.")}
  const streamLinks=(items:Stream[],title:string,meta?:Meta)=> <div className="streams">{items.map((s,i)=>s.url?<a key={i} href={watchHref(s,title,meta,addons)} onClick={()=>{try{localStorage.setItem("drift-stream-candidates",JSON.stringify(items.filter(x=>x.url).slice(0,12)))}catch{}}} className="stream">{s.name||s.title||"Play"} ▶</a>:s.externalUrl?<a key={i} href={s.externalUrl} target="_blank" rel="noreferrer" className="stream">{s.name||s.title||"Open external"} ↗</a>:<span key={i} className="stream">{s.name||s.title||s.infoHash||"Unsupported stream transport"}</span>)}</div>;
  return <main>
