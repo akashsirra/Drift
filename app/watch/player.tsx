@@ -85,25 +85,57 @@ refreshStreamCandidates().then(ok=>{
  },[active,isHls,isMedia,activePh,progressKey,t,type,poster,subs,fallbackIndex,candidates.length,candidateKey,resume,nextId,inputExpired]);
 
  useEffect(()=>{
-  if(!requestId||!addonUrls.length)return;
-  const key=type+":"+requestId+":"+addonKey;
-  if(refreshKeyRef.current===key)return;
-  refreshKeyRef.current=key;
   let cancelled=false;
-  setRefreshing(true);
-  setError("Refreshing stream…");
-  refreshStreamCandidates().then(ok=>{
-    if(cancelled)return;
-    setRefreshing(false);
-    if(!ok)setError("The stream addon did not return a fresh playable stream.");
-  }).catch(()=>{
-    if(!cancelled){
+  const runFreshResolve=async()=>{
+    try{
+      const q=new URLSearchParams(window.location.search);
+      const freshId=q.get("episodeId")||q.get("id")||"";
+      const freshType=q.get("type")||"movie";
+      const encoded=q.get("addons")||"";
+      let freshAddons:string[]=[];
+      try{
+        const parsed=JSON.parse(atob(encoded));
+        freshAddons=Array.isArray(parsed)?parsed.filter((x):x is string=>typeof x==="string"&&x.length>0):[];
+      }catch{}
+      if(!freshId||!freshAddons.length)return;
+      const key=freshType+":"+freshId+":"+freshAddons.join("|");
+      if(refreshKeyRef.current===key)return;
+      refreshKeyRef.current=key;
+      setRefreshing(true);
+      setError("Refreshing stream…");
+      const fresh=(await Promise.all(freshAddons.map(async a=>{
+        try{
+          const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a)+"&resource=stream&type="+encodeURIComponent(freshType)+"&id="+encodeURIComponent(freshId)+"&_fresh="+Date.now()+"_"+Math.random().toString(36).slice(2),{cache:"no-store"});
+          if(!r.ok)return[];
+          const j=await r.json();
+          return (Array.isArray(j.streams)?j.streams:[])
+            .filter((x:any)=>x?.url&&!streamIsExpired(x.url))
+            .map((x:any)=>({...x,__videoId:freshId,__addon:a}));
+        }catch{return[]}
+      }))).flat();
+      if(cancelled)return;
+      if(!fresh.length){
+        setRefreshing(false);
+        setError("The stream addon did not return a fresh playable stream.");
+        return;
+      }
+      const unique=fresh.filter((x:any,i:number,a:any[])=>i===a.findIndex(y=>y.url===x.url)).slice(0,12);
+      localStorage.setItem("drift-stream-candidates",JSON.stringify(unique));
+      setCandidates(unique);
+      setFallbackIndex(0);
+      setFallbackName(unique[0]?.__addon||unique[0]?.name||"Fresh stream");
       setRefreshing(false);
-      setError("The stream addon refresh failed.");
+      setError("");
+    }catch{
+      if(!cancelled){
+        setRefreshing(false);
+        setError("The stream addon refresh failed.");
+      }
     }
-  });
+  };
+  runFreshResolve();
   return()=>{cancelled=true};
- },[requestId,type,addonKey]);
+ },[]);
 
  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(["INPUT","TEXTAREA","SELECT"].includes((e.target as HTMLElement)?.tagName))return; if(e.key===" "){e.preventDefault();togglePlay()}else if(e.key==="ArrowLeft")seek(e.shiftKey?-30:-10);else if(e.key==="ArrowRight")seek(e.shiftKey?30:10);else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key.toLowerCase()==="m"){const v=videoRef.current;if(v){v.muted=!v.muted;setVolume(v.muted?0:v.volume)}}else if(e.key.toLowerCase()==="p")togglePip();else if(e.key==="+"||e.key==="=")changeZoom(zoom+.1);else if(e.key==="-")changeZoom(zoom-.1);};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[zoom]);
  useEffect(()=>{if(!nextCountdown)return;const timer=setTimeout(()=>{if(nextCountdown<=1)goNext();else setNextCountdown(x=>x-1)},1000);return()=>clearTimeout(timer)},[nextCountdown]);
