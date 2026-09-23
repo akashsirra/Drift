@@ -1,0 +1,1 @@
+export default function NotFound(){return <main className="pageState"><div className="stateIcon">404</div><h1>That page drifted away</h1><p>The page you requested does not exist.</p><div className="stateActions"><a href="/">Back to Drift</a></div></main>}
