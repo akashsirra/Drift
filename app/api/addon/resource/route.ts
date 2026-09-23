@@ -12,7 +12,7 @@ export async function GET(req:NextRequest){
     const u=new URL(path,base);
     for(const [k,v] of p.entries())if(!["addon","resource","type","id"].includes(k))u.searchParams.set(k,v);
     if(resource==="stream")u.searchParams.set("_drift",String(Date.now()));
-    const r=await fetch(u,{headers:{"user-agent":"Drift/0.1"},cache:"no-store",redirect:"follow"});
+    const r=await fetch(u,{headers:{"user-agent":"Drift/0.1","cache-control":"no-cache, no-store","pragma":"no-cache"},cache:"no-store",redirect:"follow"});
     const body=await r.text();
     if(!r.ok)return NextResponse.json({error:"Addon returned HTTP "+r.status,detail:body.slice(0,500)},{status:r.status});
     const ct=r.headers.get("content-type")||"application/json";
