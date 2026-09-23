@@ -29,7 +29,7 @@ function P(){
  v.addEventListener("timeupdate",onTime);v.addEventListener("play",onPlay);v.addEventListener("pause",onPause);v.addEventListener("loadedmetadata",onLoaded);v.addEventListener("ended",onEnded);v.addEventListener("error",onVideoError);
  if(isHls){if(Hls.isSupported()){const h=new Hls({enableWorker:false,lowLatencyMode:false,backBufferLength:90});hlsRef.current=h;h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,()=>{setLevels(h.levels.map(x=>({height:x.height||0,bitrate:x.bitrate||0})));setAudioTracks(h.audioTracks.map(x=>({id:x.id,name:x.name||x.lang||("Audio "+(x.id+1)),lang:x.lang,groupId:x.groupId})));setAudioTrack(h.audioTrack);v.play().catch(()=>{})});
 h.on(Hls.Events.AUDIO_TRACKS_UPDATED,(_,data)=>{setAudioTracks((data.audioTracks||[]).map((x:any)=>({id:x.id,name:x.name||x.lang||("Audio "+(x.id+1)),lang:x.lang,groupId:x.groupId})));setAudioTrack(h.audioTrack)});
-h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSource("/api/media/proxy?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):""));h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("This stream failed. Trying another available stream…")}else setError("HLS playback failed. All available streams failed.")}});return()=>{h.destroy();hlsRef.current=null}}if(v.canPlayType("application/vnd.apple.mpegurl"))v.src=active;else setError("This browser does not support HLS playback.")}else if(isMedia){
+h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSource("/api/media/proxy?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):""));h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("This stream failed. Trying another available stream…")}else {setError("Refreshing stream…");refreshStreamCandidates().then(ok=>{if(!ok)setError("HLS playback failed. The addon returned a stream that the media host rejected.")})}}});return()=>{h.destroy();hlsRef.current=null}}if(v.canPlayType("application/vnd.apple.mpegurl"))v.src=active;else setError("This browser does not support HLS playback.")}else if(isMedia){
  const src="/api/media/proxy?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):"");
  v.src=src;
  v.load();
@@ -57,6 +57,28 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
  }
  function updateDownload(id:string,patch:Partial<DownloadJob>){const next=loadDownloads().map(x=>x.id===id?{...x,...patch}:x);saveDownloads(next)}
  function setNoticeForDownload(id:string,status:"downloading"){updateDownload(id,{status,progress:0})}
+ async function refreshStreamCandidates(){
+  const requestId=episodeId||id;
+  if(!requestId||!addonUrls.length)return false;
+  try{
+    const fresh=(await Promise.all(addonUrls.map(async a=>{
+      try{
+        const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a)+"&resource=stream&type="+type+"&id="+encodeURIComponent(requestId)+"&_fresh="+Date.now()+"_"+Math.random().toString(36).slice(2));
+        if(!r.ok)return[];
+        const j=await r.json();
+        return (j.streams||[]).filter((x:any)=>x?.url).map((x:any)=>({...x,__videoId:requestId}));
+      }catch{return[]}
+    }))).flat();
+    if(!fresh.length)return false;
+    const unique=fresh.filter((x:any,i:number,a:any[])=>i===a.findIndex(y=>y.url===x.url));
+    localStorage.setItem("drift-stream-candidates",JSON.stringify(unique.slice(0,12)));
+    setCandidates(unique.slice(0,12));
+    setFallbackIndex(0);
+    setFallbackName("Fresh stream");
+    setError("");
+    return true;
+  }catch{return false}
+}
  async function goNext(){if(!nextId||nextLoading)return;setNextLoading(true);try{const rs=await Promise.all(addonUrls.map(async a=>{try{const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a)+"&resource=stream&type="+type+"&id="+encodeURIComponent(nextId));if(!r.ok)return[];const j=await r.json();return j.streams||[]}catch{return[]}}));const all=rs.flat().filter((s:any)=>s?.url);if(!all.length){setError("Next episode has no playable stream.");setNextCountdown(0);return}localStorage.setItem("drift-stream-candidates",JSON.stringify(all.slice(0,12)));const s=all[0],h=s.behaviorHints||{},sp=new URLSearchParams({url:s.url,title:nextTitle||"Next episode",ph:btoa(JSON.stringify(h.proxyHeaders?.request||{})),id,type,poster,subs:btoa(JSON.stringify(s.subtitles||[])),episodeId:nextId,season:nextSeason,episode:nextEpisode,nextId:"",nextTitle:"",nextSeason:"",nextEpisode:"",addons:btoa(JSON.stringify(addonUrls))});window.location.href="/watch?"+sp.toString()}finally{setNextLoading(false)}}
  async function togglePlay(){const v=videoRef.current;if(!v)return;if(v.paused)await v.play();else v.pause();touchControls()}
  function seek(delta:number){const v=videoRef.current;if(v){v.currentTime=Math.max(0,Math.min(v.duration||0,v.currentTime+delta));touchControls()}}
