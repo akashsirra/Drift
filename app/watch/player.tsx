@@ -28,7 +28,14 @@ function streamExpiryMs(raw:string){
 function streamIsExpired(raw:string){const exp=streamExpiryMs(raw);return exp>0&&exp<=Date.now();}
 function P(){
  const p=useSearchParams(),u=p.get("url")||"",t=p.get("title")||"Drift Player",ph=p.get("ph")||"",id=p.get("id")||"",type=p.get("type")||"movie",poster=p.get("poster")||"",episodeId=p.get("episodeId")||"",season=p.get("season")||"",episode=p.get("episode")||"",nextId=p.get("nextId")||"",nextTitle=p.get("nextTitle")||"",nextSeason=p.get("nextSeason")||"",nextEpisode=p.get("nextEpisode")||"";
- const [addonUrls]=useState<string[]>(()=>{try{return JSON.parse(atob(p.get("addons")||""))||[]}catch{return[]}});
+ const addonUrls=useMemo<string[]>(()=>{
+  try{
+    const raw=p.get("addons")||"";
+    if(!raw)return [];
+    const parsed=JSON.parse(atob(raw));
+    return Array.isArray(parsed)?parsed.filter((x):x is string=>typeof x==="string"&&x.length>0):[];
+  }catch{return[]}
+ },[p]);
  const videoRef=useRef<HTMLVideoElement|null>(null),hlsRef=useRef<Hls|null>(null),hideRef=useRef<ReturnType<typeof setTimeout>|null>(null);
  const [mounted,setMounted]=useState(false),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0),[fallbackIndex,setFallbackIndex]=useState(0),[fallbackName,setFallbackName]=useState(""),[candidates,setCandidates]=useState<{url:string;name?:string;title?:string;__addon?:string;behaviorHints?:Record<string,unknown>}[]>([]);
  const refreshKeyRef=useRef("");
