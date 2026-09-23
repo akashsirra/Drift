@@ -7,3 +7,5 @@
 
 .typeTabs{display:flex;gap:6px;margin-left:auto}.typeTabs button{border:1px solid #2a2e38;background:#151821;color:#9da5b5;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:700}.typeTabs button.active{background:#fff;color:#08090c;border-color:#fff}
 @media(max-width:650px){.sectionHead{flex-wrap:wrap}.typeTabs{width:100%;margin-left:0}.typeTabs button{flex:1}}
+
+.episodePicker{margin-top:18px}.seasonTabs{display:flex;gap:7px;overflow-x:auto;padding:8px 0}.seasonTabs button{flex:0 0 auto;background:#1a1d25;border:1px solid #2a2e38;color:#cfd4df;padding:8px 11px;border-radius:9px}.seasonTabs button.active{background:#fff;color:#08090c;border-color:#fff;font-weight:800}.episodeList{max-height:260px;overflow-y:auto}.tvmazeCredit{display:inline-block;margin-top:8px;color:#747d8e;font-size:11px;text-decoration:none}
