@@ -31,6 +31,7 @@ function P(){
  const [addonUrls]=useState<string[]>(()=>{try{return JSON.parse(atob(p.get("addons")||""))||[]}catch{return[]}});
  const videoRef=useRef<HTMLVideoElement|null>(null),hlsRef=useRef<Hls|null>(null),hideRef=useRef<ReturnType<typeof setTimeout>|null>(null);
  const [mounted,setMounted]=useState(false),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0),[fallbackIndex,setFallbackIndex]=useState(0),[fallbackName,setFallbackName]=useState(""),[candidates,setCandidates]=useState<{url:string;name?:string;title?:string;__addon?:string;behaviorHints?:Record<string,unknown>}[]>([]);
+ const refreshKeyRef=useRef("");
  const [playing,setPlaying]=useState(false),[current,setCurrent]=useState(0),[volume,setVolume]=useState(1),[speed,setSpeed]=useState(1),[zoom,setZoom]=useState(1),[aspect,setAspect]=useState<"contain"|"cover"|"fill">("contain"),[rotate,setRotate]=useState(0),[fullscreen,setFullscreen]=useState(false),[pip,setPip]=useState(false),[levels,setLevels]=useState<Level[]>([]),[level,setLevel]=useState(-1),[audioTracks,setAudioTracks]=useState<AudioTrack[]>([]),[audioTrack,setAudioTrack]=useState(-1),[menu,setMenu]=useState<"cc"|"quality"|"speed"|"audio"|"more"|null>(null),[showControls,setShowControls]=useState(true),[nextCountdown,setNextCountdown]=useState(0),[nextLoading,setNextLoading]=useState(false),[downloadMessage,setDownloadMessage]=useState(""),[downloadProgress,setDownloadProgress]=useState(0),[downloadBusy,setDownloadBusy]=useState(false);
  const subs=useMemo<Subtitle[]>(()=>{try{return JSON.parse(atob(p.get("subs")||""))||[]}catch{return[]}},[p]);
  const progressKey=episodeId?(type+":"+episodeId):(id?(type+":"+id):("url:"+u));
@@ -78,23 +79,24 @@ refreshStreamCandidates().then(ok=>{
 
  useEffect(()=>{
   if(!requestId||!addonUrls.length)return;
-  const needsRefresh=inputExpired||streamIsExpired(active);
-  if(!needsRefresh)return;
+  const key=type+":"+requestId+":"+addonKey;
+  if(refreshKeyRef.current===key)return;
+  refreshKeyRef.current=key;
   let cancelled=false;
   setRefreshing(true);
-  setError("Refreshing expired stream…");
+  setError("Refreshing stream…");
   refreshStreamCandidates().then(ok=>{
     if(cancelled)return;
     setRefreshing(false);
-    if(!ok)setError("The previous stream expired and the addon did not return a fresh stream.");
+    if(!ok)setError("The stream addon did not return a fresh playable stream.");
   }).catch(()=>{
     if(!cancelled){
       setRefreshing(false);
-      setError("The previous stream expired and the addon refresh failed.");
+      setError("The stream addon refresh failed.");
     }
   });
   return()=>{cancelled=true};
- },[inputExpired,active,requestId,type,addonKey]);
+ },[requestId,type,addonKey]);
 
  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(["INPUT","TEXTAREA","SELECT"].includes((e.target as HTMLElement)?.tagName))return; if(e.key===" "){e.preventDefault();togglePlay()}else if(e.key==="ArrowLeft")seek(e.shiftKey?-30:-10);else if(e.key==="ArrowRight")seek(e.shiftKey?30:10);else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key.toLowerCase()==="m"){const v=videoRef.current;if(v){v.muted=!v.muted;setVolume(v.muted?0:v.volume)}}else if(e.key.toLowerCase()==="p")togglePip();else if(e.key==="+"||e.key==="=")changeZoom(zoom+.1);else if(e.key==="-")changeZoom(zoom-.1);};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[zoom]);
  useEffect(()=>{if(!nextCountdown)return;const timer=setTimeout(()=>{if(nextCountdown<=1)goNext();else setNextCountdown(x=>x-1)},1000);return()=>clearTimeout(timer)},[nextCountdown]);
