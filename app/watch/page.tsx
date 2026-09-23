@@ -8,23 +8,6 @@ type DownloadJob={id:string;title:string;url:string;type:"direct"|"hls";status:"
 const DOWNLOAD_KEY="drift-downloads";
 function loadDownloads():DownloadJob[]{try{return JSON.parse(localStorage.getItem(DOWNLOAD_KEY)||"[]")}catch{return[]}}
 function saveDownloads(x:DownloadJob[]){localStorage.setItem(DOWNLOAD_KEY,JSON.stringify(x.map(({blobUrl,...j})=>j)))}
-function proxyUrl(raw:string,ph:string){return "/api/media/proxy?url="+encodeURIComponent(raw)+(ph?"&ph="+encodeURIComponent(ph):"")}
-async function downloadMedia(job:DownloadJob,ph:string,onUpdate:(p:number)=>void){
- const src=job.type==="hls"?proxyUrl(job.url,ph):proxyUrl(job.url,ph);
- if(job.type==="direct"){
-   const r=await fetch(src);if(!r.ok)throw Error("Download request failed ("+r.status+")");
-   const total=Number(r.headers.get("content-length")||0);let done=0;const reader=r.body?.getReader();const chunks:Uint8Array[]=[];
-   if(reader){for(;;){const x=await reader.read();if(x.done)break;if(x.value){chunks.push(x.value);done+=x.value.byteLength;if(total)onUpdate(Math.min(99,done/total*100))}}}
-   const blob=new Blob(chunks,{type:r.headers.get("content-type")||"video/mp4"});return URL.createObjectURL(blob);
- }
- const playlist=await (await fetch(src)).text();
- if(/#EXT-X-MAP:/i.test(playlist))throw Error("This HLS stream uses fragmented MP4; HLS download for this format is not available yet.");
- const lines=playlist.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);const segs=lines.filter(x=>!x.startsWith("#"));
- if(!segs.length)throw Error("No HLS segments found.");
- const base=new URL(job.url);const chunks:BlobPart[]=[];
- for(let i=0;i<segs.length;i++){const u=segs[i].startsWith("/api/media/proxy")?new URL(segs[i],window.location.origin).toString():new URL(segs[i],base).toString();const rr=await fetch(u);if(!rr.ok)throw Error("Segment "+(i+1)+" failed ("+rr.status+")");chunks.push(await rr.blob());onUpdate(Math.min(99,((i+1)/segs.length)*100))}
- return URL.createObjectURL(new Blob(chunks,{type:"video/mp2t"}));
-}
 type Subtitle={url:string;lang?:string;label?:string;id?:string};
 type Level={height:number;bitrate:number};
 type AudioTrack={id:number;name:string;lang?:string;groupId?:string};
@@ -60,7 +43,7 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
     const total=Number(r.headers.get("content-length")||0);let done=0;const chunks:Uint8Array[]=[];const reader=r.body?.getReader();
     if(!reader)throw new Error("Download stream is unavailable.");
     for(;;){const part=await reader.read();if(part.done)break;if(part.value){chunks.push(part.value);done+=part.value.byteLength;const pct=total?Math.min(99,done/total*100):0;setDownloadProgress(pct);updateDownload(job.id,{status:"downloading",progress:pct,size:done})}}
-    const blob=new Blob(chunks,{type:r.headers.get("content-type")||"video/mp4"});const blobUrl=URL.createObjectURL(blob);const a=document.createElement("a");a.href=blobUrl;a.download=safeFileName(t)+".mp4";a.click();setTimeout(()=>URL.revokeObjectURL(blobUrl),60000);
+    const blob=new Blob(chunks,{type:r.headers.get("content-type")||"video/mp4"});const blobUrl=URL.createObjectURL(blob);const a=document.createElement("a");a.href=blobUrl;a.download=safeFileName(t)+guessExt(active);a.click();setTimeout(()=>URL.revokeObjectURL(blobUrl),60000);
     updateDownload(job.id,{status:"complete",progress:100,size:blob.size});setDownloadProgress(100);setDownloadMessage("Download complete.");
   }catch(e){updateDownload(job.id,{status:"failed",progress:0,error:e instanceof Error?e.message:"Download failed"});setDownloadMessage(e instanceof Error?e.message:"Download failed");}
   finally{setDownloadBusy(false)}
