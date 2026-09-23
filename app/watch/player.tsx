@@ -77,15 +77,21 @@ refreshStreamCandidates().then(ok=>{
  },[active,isHls,isMedia,activePh,progressKey,t,type,poster,subs,fallbackIndex,candidates.length,candidateKey,resume,nextId,inputExpired]);
 
  useEffect(()=>{
-  if(!inputExpired||!streamIsExpired(active)||!requestId||!addonUrls.length)return;
+  if(!requestId||!addonUrls.length)return;
+  const needsRefresh=inputExpired||streamIsExpired(active);
+  if(!needsRefresh)return;
   let cancelled=false;
   setRefreshing(true);
   setError("Refreshing expired stream…");
   refreshStreamCandidates().then(ok=>{
     if(cancelled)return;
+    setRefreshing(false);
     if(!ok)setError("The previous stream expired and the addon did not return a fresh stream.");
   }).catch(()=>{
-    if(!cancelled)setError("The previous stream expired and the addon refresh failed.");
+    if(!cancelled){
+      setRefreshing(false);
+      setError("The previous stream expired and the addon refresh failed.");
+    }
   });
   return()=>{cancelled=true};
  },[inputExpired,active,requestId,type,addonKey]);
