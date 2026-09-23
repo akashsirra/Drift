@@ -15,7 +15,7 @@ function P(){
  const [candidates,setCandidates]=useState<{url:string;name?:string;title?:string;behaviorHints?:Record<string,unknown>}[]>([]);
  useEffect(()=>{try{const x=JSON.parse(localStorage.getItem("drift-stream-candidates")||"[]");if(Array.isArray(x))setCandidates(x.filter((s:any)=>s?.url))}catch{}},[]);
  const active=candidates[fallbackIndex]?.url||u; const activeHints:any=candidates[fallbackIndex]?.behaviorHints||{}; const activePh=fallbackIndex&&activeHints.proxyHeaders?.request?btoa(JSON.stringify(activeHints.proxyHeaders.request)):ph;
- const isHls=/\\.m3u8(\\?|$)/i.test(active),isMedia=/\\.(mp4|webm|ogg)(\\?|$)/i.test(active);
+ const isHls=/\.m3u8(\?|$)/i.test(active),isMedia=/\.(mp4|webm|ogg)(\?|$)/i.test(active);
 
  useEffect(()=>{const raw=localStorage.getItem("drift-progress");try{const all=raw?JSON.parse(raw):{};const item=all[progressKey];if(item?.position>5&&item?.position<Math.max(item.duration-30,0))setResume(item.position)}catch{}},[progressKey]);
 
