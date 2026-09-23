@@ -85,3 +85,10 @@ header input:focus{border-color:#555d6d;background:#181b23}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}
 }
+
+.mobileNav{grid-template-columns:repeat(3,1fr)!important}
+@media(max-width:650px){body:has(.watch) .mobileNav{display:none}.watch{padding-bottom:28px}}
+.modal{isolation:isolate}
+.modalBackdrop{position:absolute;inset:0;background-size:cover;background-position:center;filter:blur(22px);opacity:.22;transform:scale(1.08);pointer-events:none}
+.modal:before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.45);pointer-events:none}
+.modalCard{z-index:1}
