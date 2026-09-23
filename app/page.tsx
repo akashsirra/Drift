@@ -31,7 +31,10 @@ function streamIsFresh(raw?:string){
 }
 async function fetchAddonStreams(addon:string,type:string,id:string){
  const q="_fresh="+Date.now()+"_"+Math.random().toString(36).slice(2);
- const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(addon)+"&resource=stream&type="+encodeURIComponent(type)+"&id="+encodeURIComponent(id)+"&"+q,{cache:"no-store"});
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),15000);
+ let r:Response;
+ try{r=await fetch("/api/addon/resource?addon="+encodeURIComponent(addon)+"&resource=stream&type="+encodeURIComponent(type)+"&id="+encodeURIComponent(id)+"&"+q,{cache:"no-store",signal:controller.signal})}catch{return []}finally{clearTimeout(timer)}
  if(!r.ok)return [];
  const j=await r.json();
  if(Array.isArray(j))return j;
@@ -70,22 +73,20 @@ export default function Home(){
     setSelected(full);
     const streamAddons=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));
     if(!streamAddons.length){setNotice("No stream addon is installed. Install a stream-capable addon to get Play options.");return}
-    const results=await Promise.all(streamAddons.map(async x=>{
+    let merged:Stream[]=[];
+    setNotice("Checking "+streamAddons.length+" stream source(s)…");
+    await Promise.all(streamAddons.map(async x=>{
       try{
         const raw=await fetchAddonStreams(x.url,full.type,full.id);
-        return raw.map((s:Stream)=>({...s,__addon:x.name}));
-      }catch{return []}
+        const found=raw.map((s:Stream)=>({...s,__addon:x.name}));
+        if(found.length){
+          merged=[...merged,...found];
+          setStreams([...merged]);
+          const playableNow=merged.filter((s:Stream)=>Boolean(s.url)).length;
+          setNotice("Found "+merged.length+" stream option(s). "+playableNow+" playable in Drift.");
+        }
+      }catch{}
     }));
-    let merged=results.flat();
-    if(!merged.length){
-      setNotice("Refreshing stream source…");
-      const retry=await Promise.all(streamAddons.map(async x=>{
-        try{return (await fetchAddonStreams(x.url,full.type,full.id)).map((s:Stream)=>({...s,__addon:x.name}));}
-        catch{return []}
-      }));
-      merged=retry.flat();
-    }
-    setStreams(merged);
     const playable=merged.filter((s:Stream)=>Boolean(s.url)).length;
     const external=merged.filter((s:Stream)=>!s.url&&Boolean(s.externalUrl)).length;
     setNotice(merged.length?("Addon returned "+merged.length+" stream option(s). "+playable+" playable in Drift"+(external?" · "+external+" external":"")+"."):"No stream entries were returned for this title.");
