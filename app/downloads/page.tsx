@@ -12,7 +12,7 @@ export default function Downloads(){
  const active=jobs.filter(x=>x.status==="downloading"||x.status==="queued");
  return <main>
   <header><a className="brand" href="/">DRIFT</a><a className="nav" href="/library">Library</a><a className="nav" href="/addons">Addons</a></header>
-  <section className="hero"><span className="eyebrow">DOWNLOADS</span><h1>Your downloads.</h1><p>Track direct files and HLS segment downloads started from the player.</p></section>
+  <section className="hero"><span className="eyebrow">DOWNLOADS</span><h1>Your downloads.</h1><p>Track direct media and FFmpeg-converted HLS downloads started from the player.</p></section>
   <section className="panel">
    <div className="sectionHead"><h2>Download Manager</h2><div><button onClick={refresh}>Refresh</button><button onClick={clear}>Clear history</button></div></div>
    {active.length>0&&<p className="success">{active.length} download{active.length===1?"":"s"} active. Keep this tab open while a browser download is being prepared.</p>}
