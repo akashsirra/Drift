@@ -24,13 +24,15 @@ function P(){
   setError("");
   const save=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");all[progressKey]={id,type,title:t,poster,url:u,ph,subs,episodeId,season,episode,position:v.currentTime||0,duration:v.duration||duration,updatedAt:Date.now()};localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}};
   const onTime=()=>{if(Math.floor(v.currentTime)%5===0)save()};
+  const onVideoError=()=>{if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("Playback failed. Trying another available stream…")}else setError("The video could not be played. The stream may have expired or rejected the request.")};
+  v.addEventListener("error",onVideoError);
   v.addEventListener("timeupdate",onTime);v.addEventListener("pause",save);v.addEventListener("ended",()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");delete all[progressKey];localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}});
   if(isHls){
-   if(Hls.isSupported()){const h=new Hls({enableWorker:false});h.loadSource("/api/media/proxy?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):""));h.attachMedia(v);h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("This stream failed. Trying another available stream…")}else setError("HLS playback failed. All available streams failed.")}});return()=>{h.destroy();v.removeEventListener("timeupdate",onTime);v.removeEventListener("pause",save)}}
+   if(Hls.isSupported()){const h=new Hls({enableWorker:false,lowLatencyMode:false,backBufferLength:90});h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,()=>{v.play().catch(()=>{})});h.loadSource("/api/media/proxy?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):""));h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("This stream failed. Trying another available stream…")}else setError("HLS playback failed. All available streams failed.")}});return()=>{h.destroy();v.removeEventListener("timeupdate",onTime);v.removeEventListener("pause",save);v.removeEventListener("error",onVideoError)}}
    if(v.canPlayType("application/vnd.apple.mpegurl")){v.src=active}else setError("This browser does not support HLS playback.");
   }else if(isMedia)v.src=active;else setError("This stream is not a browser-native media URL.");
-  return()=>{v.removeEventListener("timeupdate",onTime);v.removeEventListener("pause",save)};
- },[active,isHls,isMedia,activePh,progressKey,duration,t,type,poster,subs,fallbackIndex,candidates.length]);
+  return()=>{v.removeEventListener("timeupdate",onTime);v.removeEventListener("pause",save);v.removeEventListener("error",onVideoError)};
+ },[active,isHls,isMedia,activePh,progressKey,t,type,poster,subs,fallbackIndex,candidates.length]);
 
  useEffect(()=>{const v=videoRef.current;if(v&&resume>0){const set=()=>{try{v.currentTime=resume}catch{}};if(v.readyState>=1)set();else v.addEventListener("loadedmetadata",set,{once:true});return()=>v.removeEventListener("loadedmetadata",set)}},[resume]);
 
