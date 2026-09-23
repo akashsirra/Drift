@@ -31,9 +31,11 @@ export async function GET(req:NextRequest){
     if(!upstream.ok)return new NextResponse(await upstream.text(),{status:upstream.status,headers:{"content-type":ct}});
     if(ct.includes("mpegurl")||target.pathname.toLowerCase().endsWith(".m3u8")){
       const text=await upstream.text(),base=upstream.url||target.toString();
+      const proxy=(u:string)=>"/api/media/proxy?url="+encodeURIComponent(u)+(ph?"&ph="+encodeURIComponent(ph):"");
       const rewritten=text.split("\n").map(line=>{
-        const s=line.trim();if(!s||s.startsWith("#"))return line;
-        const u=absolute(s,base);return isHttp(u)?"/api/media/proxy?url="+encodeURIComponent(u)+(ph?"&ph="+encodeURIComponent(ph):""):line;
+        const s=line.trim();if(!s)return line;
+        if(s.startsWith("#"))return line.replace(/URI="([^"]+)"/g,(_,rawUri)=>{const u=absolute(rawUri,base);return isHttp(u) ? 'URI="'+proxy(u)+'"' : 'URI="'+rawUri+'"';});
+        const u=absolute(s,base);return isHttp(u)?proxy(u):line;
       }).join("\n");
       return new NextResponse(rewritten,{headers:{"content-type":"application/vnd.apple.mpegurl","cache-control":"no-store","access-control-allow-origin":"*"}});
     }
