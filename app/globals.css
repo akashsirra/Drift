@@ -33,3 +33,4 @@
 
 .playerShell:fullscreen{background:#000;width:100vw;height:100vh}.playerShell:fullscreen .video{width:100%;height:100%;object-fit:contain}.moreMenu{max-height:70vh;overflow:auto;min-width:150px}.zoomRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}.zoomRow button{padding:7px}.controlBar{flex-wrap:wrap}
 @media(max-width:650px){.continueSection{padding:0 14px}.continueGrid{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px}.continueCard{min-width:260px;scroll-snap-align:start}.continueLink{grid-template-columns:70px 1fr}.continueLink img,.continueLink .posterFallback{width:70px;height:100px}.controlBar{gap:6px}.controlBar button{min-width:38px}.moreMenu{right:0}}
+.videoPlaceholder{width:100%;height:100%;min-height:320px;background:#000 center/contain no-repeat;border-radius:12px}
