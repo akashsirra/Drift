@@ -41,6 +41,23 @@ export async function GET(req:NextRequest){
   try{
     const target=new URL(raw),headers=decodeHeaders(ph);
 
+    if(/\.mkv(?:[?#]|$)/i.test(raw) && req.nextUrl.searchParams.get("mode")==="play"){
+      const headerLines=Object.entries(headers).map(([k,v])=>k+": "+v).join("\r\n");
+      const ua=headers["User-Agent"]||headers["user-agent"]||"Drift/0.1";
+      const args=["-hide_banner","-loglevel","error","-user_agent",ua,...(headerLines?["-headers",headerLines+"\r\n"]:[]),"-i",target.toString(),"-map","0:v:0?","-map","0:a?","-c","copy","-movflags","+frag_keyframe+empty_moov+default_base_moof","-f","mp4","pipe:1"];
+      const child=spawn(process.env.FFMPEG_PATH||"ffmpeg",args,{stdio:["ignore","pipe","pipe"]});
+      const stream=new ReadableStream<Uint8Array>({
+        start(controller){
+          child.stdout.on("data",chunk=>controller.enqueue(new Uint8Array(chunk)));
+          child.stdout.on("end",()=>controller.close());
+          child.stdout.on("error",e=>controller.error(e));
+          child.on("error",e=>controller.error(e));
+        },
+        cancel(){child.kill("SIGTERM")}
+      });
+      return new NextResponse(stream,{headers:{"content-type":"video/mp4","cache-control":"no-store","access-control-allow-origin":"*","accept-ranges":"none"}});
+    }
+
     if(isHlsUrl(raw)){
       const dir=await mkdtemp(join(tmpdir(),"drift-hls-"));
       const out=join(dir,"download.mp4");
