@@ -34,11 +34,14 @@ function P(){
  const [playing,setPlaying]=useState(false),[current,setCurrent]=useState(0),[volume,setVolume]=useState(1),[speed,setSpeed]=useState(1),[zoom,setZoom]=useState(1),[aspect,setAspect]=useState<"contain"|"cover"|"fill">("contain"),[rotate,setRotate]=useState(0),[fullscreen,setFullscreen]=useState(false),[pip,setPip]=useState(false),[levels,setLevels]=useState<Level[]>([]),[level,setLevel]=useState(-1),[audioTracks,setAudioTracks]=useState<AudioTrack[]>([]),[audioTrack,setAudioTrack]=useState(-1),[menu,setMenu]=useState<"cc"|"quality"|"speed"|"audio"|"more"|null>(null),[showControls,setShowControls]=useState(true),[nextCountdown,setNextCountdown]=useState(0),[nextLoading,setNextLoading]=useState(false),[downloadMessage,setDownloadMessage]=useState(""),[downloadProgress,setDownloadProgress]=useState(0),[downloadBusy,setDownloadBusy]=useState(false);
  const subs=useMemo<Subtitle[]>(()=>{try{return JSON.parse(atob(p.get("subs")||""))||[]}catch{return[]}},[p]);
  const progressKey=episodeId?(type+":"+episodeId):(id?(type+":"+id):("url:"+u));
+ const requestId=episodeId||id;
+ const addonKey=addonUrls.join("|");
+ const inputExpired=streamIsExpired(u);
  useEffect(()=>{
   try{
     const x=JSON.parse(localStorage.getItem("drift-stream-candidates")||"[]");
     if(Array.isArray(x)){
-      const fresh=x.filter((s:any)=>s?.url&&!streamIsExpired(s.url));
+      const fresh=x.filter((s:any)=>s?.url&&!streamIsExpired(s.url)&&(!s.__videoId||!requestId||s.__videoId===requestId));
       setCandidates(fresh);
       localStorage.setItem("drift-stream-candidates",JSON.stringify(fresh));
     }
@@ -51,12 +54,7 @@ function P(){
  useEffect(()=>{touchControls();return()=>{if(hideRef.current)clearTimeout(hideRef.current)}},[]);
  useEffect(()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");const item=all[progressKey];if(item?.position>5&&item?.position<Math.max(item.duration-30,0))setResume(item.position)}catch{}},[progressKey]);
  useEffect(()=>{
-  if((isHls||isMedia)&&streamIsExpired(active)){
-    if(!refreshing){
-      setRefreshing(true);
-      setError("Refreshing expired stream…");
-      refreshStreamCandidates().finally(()=>setRefreshing(false));
-    }
+  if(inputExpired){
     return;
   }
   const v=videoRef.current;if(!v||!u)return;setError("");const save=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");all[progressKey]={id,type,title:t,poster,url:u,ph,subs,episodeId,season,episode,position:v.currentTime||0,duration:v.duration||duration,updatedAt:Date.now()};localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}};const onTime=()=>{setCurrent(v.currentTime);if(Math.floor(v.currentTime)%5===0)save()};const onPlay=()=>setPlaying(true),onPause=()=>{setPlaying(false);save()};const onLoaded=()=>{setDuration(v.duration||0);if(resume>0&&resume<v.duration-30){try{v.currentTime=resume}catch{}}};const onEnded=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");delete all[progressKey];localStorage.setItem("drift-progress",JSON.stringify(all))}catch{};if(nextId)setNextCountdown(5)};const onVideoError=()=>{if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("Playback failed. Trying another available stream…")}else setError("The video could not be played. The stream may have expired or rejected the request.")};
@@ -70,7 +68,22 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
  v.play().catch(()=>{});
 }else setError("This stream is not a browser-native media URL.");
  return()=>{v.removeEventListener("timeupdate",onTime);v.removeEventListener("play",onPlay);v.removeEventListener("pause",onPause);v.removeEventListener("loadedmetadata",onLoaded);v.removeEventListener("ended",onEnded);v.removeEventListener("error",onVideoError)};
- },[active,isHls,isMedia,activePh,progressKey,t,type,poster,subs,fallbackIndex,candidates.length,resume,nextId]);
+ },[active,isHls,isMedia,activePh,progressKey,t,type,poster,subs,fallbackIndex,candidates.length,resume,nextId,inputExpired]);
+
+ useEffect(()=>{
+  if(!inputExpired||!requestId||!addonUrls.length)return;
+  let cancelled=false;
+  setRefreshing(true);
+  setError("Refreshing expired stream…");
+  refreshStreamCandidates().then(ok=>{
+    if(cancelled)return;
+    if(!ok)setError("The previous stream expired and the addon did not return a fresh stream.");
+  }).catch(()=>{
+    if(!cancelled)setError("The previous stream expired and the addon refresh failed.");
+  });
+  return()=>{cancelled=true};
+ },[inputExpired,requestId,type,addonKey]);
+
  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(["INPUT","TEXTAREA","SELECT"].includes((e.target as HTMLElement)?.tagName))return; if(e.key===" "){e.preventDefault();togglePlay()}else if(e.key==="ArrowLeft")seek(e.shiftKey?-30:-10);else if(e.key==="ArrowRight")seek(e.shiftKey?30:10);else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key.toLowerCase()==="m"){const v=videoRef.current;if(v){v.muted=!v.muted;setVolume(v.muted?0:v.volume)}}else if(e.key.toLowerCase()==="p")togglePip();else if(e.key==="+"||e.key==="=")changeZoom(zoom+.1);else if(e.key==="-")changeZoom(zoom-.1);};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[zoom]);
  useEffect(()=>{if(!nextCountdown)return;const timer=setTimeout(()=>{if(nextCountdown<=1)goNext();else setNextCountdown(x=>x-1)},1000);return()=>clearTimeout(timer)},[nextCountdown]);
  async function startDownload(){
@@ -92,16 +105,16 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
  function updateDownload(id:string,patch:Partial<DownloadJob>){const next=loadDownloads().map(x=>x.id===id?{...x,...patch}:x);saveDownloads(next)}
  function setNoticeForDownload(id:string,status:"downloading"){updateDownload(id,{status,progress:0})}
  async function refreshStreamCandidates(){
-  const requestId=episodeId||id;
   if(!requestId||!addonUrls.length)return false;
-  setRefreshing(true);
   try{
     const fresh=(await Promise.all(addonUrls.map(async a=>{
       try{
         const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a)+"&resource=stream&type="+type+"&id="+encodeURIComponent(requestId)+"&_fresh="+Date.now()+"_"+Math.random().toString(36).slice(2));
         if(!r.ok)return[];
         const j=await r.json();
-        return (j.streams||[]).filter((x:any)=>x?.url).map((x:any)=>({...x,__videoId:requestId}));
+        return (j.streams||[])
+          .filter((x:any)=>x?.url&&!streamIsExpired(x.url))
+          .map((x:any)=>({...x,__videoId:requestId,__addon:a}));
       }catch{return[]}
     }))).flat();
     if(!fresh.length)return false;
@@ -113,7 +126,6 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
     setError("");
     return true;
   }catch{return false}
-  finally{setRefreshing(false)}
 }
  async function goNext(){if(!nextId||nextLoading)return;setNextLoading(true);try{const rs=await Promise.all(addonUrls.map(async a=>{try{const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a)+"&resource=stream&type="+type+"&id="+encodeURIComponent(nextId));if(!r.ok)return[];const j=await r.json();return j.streams||[]}catch{return[]}}));const all=rs.flat().filter((s:any)=>s?.url);if(!all.length){setError("Next episode has no playable stream.");setNextCountdown(0);return}localStorage.setItem("drift-stream-candidates",JSON.stringify(all.slice(0,12)));const s=all[0],h=s.behaviorHints||{},sp=new URLSearchParams({url:s.url,title:nextTitle||"Next episode",ph:btoa(JSON.stringify(h.proxyHeaders?.request||{})),id,type,poster,subs:btoa(JSON.stringify(s.subtitles||[])),episodeId:nextId,season:nextSeason,episode:nextEpisode,nextId:"",nextTitle:"",nextSeason:"",nextEpisode:"",addons:btoa(JSON.stringify(addonUrls))});window.location.href="/watch?"+sp.toString()}finally{setNextLoading(false)}}
  async function togglePlay(){const v=videoRef.current;if(!v)return;if(v.paused)await v.play();else v.pause();touchControls()}
