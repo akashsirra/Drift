@@ -64,7 +64,7 @@ function P(){
  if(isHls){if(Hls.isSupported()){const h=new Hls({enableWorker:false,lowLatencyMode:false,backBufferLength:90});hlsRef.current=h;h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,()=>{setLevels(h.levels.map(x=>({height:x.height||0,bitrate:x.bitrate||0})));setAudioTracks(h.audioTracks.map(x=>({id:x.id,name:x.name||x.lang||("Audio "+(x.id+1)),lang:x.lang,groupId:x.groupId})));setAudioTrack(h.audioTrack);v.play().catch(()=>{})});
 h.on(Hls.Events.AUDIO_TRACKS_UPDATED,(_,data)=>{setAudioTracks((data.audioTracks||[]).map((x:any)=>({id:x.id,name:x.name||x.lang||("Audio "+(x.id+1)),lang:x.lang,groupId:x.groupId})));setAudioTrack(h.audioTrack)});
 h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSource("/api/media/proxy?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):""));h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){if(tryNextCandidate(data.response?.code===401||data.response?.code===403?"The source rejected this stream.":"This stream failed."))return;
-setError("Refreshing stream…");
+setError(activeSource+" failed. Refreshing stream candidates…");
 refreshStreamCandidates().then(ok=>{
   if(!ok)setError("HLS playback failed. No other fresh candidate was returned.");
 })}});return()=>{h.destroy();hlsRef.current=null}}if(v.canPlayType("application/vnd.apple.mpegurl"))v.src=active;else setError("This browser does not support HLS playback.")}else if(isMedia){
