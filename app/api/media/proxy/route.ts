@@ -28,17 +28,17 @@ function decodeHeaders(raw:string){
 async function curlText(url:string,headers:Record<string,string>){
   const args=["-L","--compressed","--silent","--show-error","--max-time","25"];
   for(const [k,v] of Object.entries(headers))args.push("-H",k+": "+v);
-  args.push("-w","\\n__DRIFT_STATUS__:%{http_code}",url);
+  args.push("-w","\n__DRIFT_STATUS__:%{http_code}",url);
   try{
     const r=await execFileAsync(process.env.DRIFT_CURL_PATH||"curl",args,{maxBuffer:8*1024*1024});
     const raw=String(r.stdout||"");
-    const marker="\\n__DRIFT_STATUS__:";
+    const marker="\n__DRIFT_STATUS__:";
     const at=raw.lastIndexOf(marker);
     if(at<0)return null;
     return {status:Number(raw.slice(at+marker.length).trim())||0,body:raw.slice(0,at)};
   }catch(e){
     const r=e as any,raw=String(r.stdout||"");
-    const marker="\\n__DRIFT_STATUS__:";
+    const marker="\n__DRIFT_STATUS__:";
     const at=raw.lastIndexOf(marker);
     if(at>=0)return {status:Number(raw.slice(at+marker.length).trim())||0,body:raw.slice(0,at)};
     return null;
