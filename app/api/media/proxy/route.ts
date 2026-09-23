@@ -21,7 +21,7 @@ function decodeHeaders(raw:string){
 }
 
 export async function GET(req:NextRequest){
-  const raw=req.nextUrl.searchParams.get("url"),ph=req.nextUrl.searchParams.get("ph")||"";
+  const raw=req.nextUrl.searchParams.get("url"),ph=req.nextUrl.searchParams.get("ph")||"",mc=req.nextUrl.searchParams.get("mc")||"";
   if(!raw||!isHttp(raw))return NextResponse.json({error:"Missing or invalid media URL"},{status:400});
   try{
     const target=new URL(raw);
@@ -40,12 +40,23 @@ if(headers.Referer||headers.referer){
 requestHeaders["sec-fetch-site"]="cross-site";
 requestHeaders["sec-fetch-mode"]="cors";
 requestHeaders["sec-fetch-dest"]="empty";
+if(mc){
+  try{requestHeaders["cookie"]=Buffer.from(mc,"base64url").toString("utf8")}catch{}
+}
 const upstream=await fetch(target,{headers:requestHeaders,cache:"no-store",redirect:"follow"});
     const ct=upstream.headers.get("content-type")||"application/octet-stream";
     if(!upstream.ok)return new NextResponse(await upstream.text(),{status:upstream.status,headers:{"content-type":ct}});
     if(ct.includes("mpegurl")||target.pathname.toLowerCase().endsWith(".m3u8")){
       const text=await upstream.text(),base=upstream.url||target.toString();
-      const proxy=(u:string)=>"/api/media/proxy?url="+encodeURIComponent(u)+(ph?"&ph="+encodeURIComponent(ph):"");
+      const upstreamCookies=typeof (upstream.headers as any).getSetCookie==="function"?(upstream.headers as any).getSetCookie():[];
+const cookieValue=upstreamCookies.map((x:string)=>x.split(";")[0]).filter(Boolean).join("; ");
+const cookieToken=cookieValue?Buffer.from(cookieValue,"utf8").toString("base64url"):mc;
+const proxy=(u:string)=>{
+  let out="/api/media/proxy?url="+encodeURIComponent(u);
+  if(ph)out+="&ph="+encodeURIComponent(ph);
+  if(cookieToken)out+="&mc="+encodeURIComponent(cookieToken);
+  return out;
+};
       const rewritten=text.split("\n").map(line=>{
         const s=line.trim();if(!s)return line;
         if(s.startsWith("#"))return line.replace(/URI="([^"]+)"/g,(_,rawUri)=>{const u=absolute(rawUri,base);return isHttp(u) ? 'URI="'+proxy(u)+'"' : 'URI="'+rawUri+'"';});
