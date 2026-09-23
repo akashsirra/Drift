@@ -37,3 +37,5 @@
 .streamStatus{margin-top:14px;color:#9fa8b8;font-size:13px;min-height:20px}.streamStatus+.error{margin-top:8px}.streams:empty{display:none}
 
 .resolveAgain{margin-top:12px;border:1px solid #343a46;background:#1a1d25;color:#fff;border-radius:9px;padding:9px 12px;font-weight:700}.resolveAgain:hover{background:#252a34}.streamStatus{margin-top:14px;color:#9fa8b8;font-size:13px;min-height:20px}
+
+.playPanel{margin-top:18px;padding:14px 0 2px;border-top:1px solid #2a2e38}.playLabel{margin-top:12px;margin-bottom:8px;color:#737c8e;font-size:11px;font-weight:900;letter-spacing:.14em}.playPanel .streams{margin-top:8px}.playPanel .stream{display:inline-flex;align-items:center;background:#fff;color:#08090c;font-weight:900}.playPanel .stream:hover{background:#e8eaf0}.playPanel .stream+.stream{background:#20242d;color:#fff}.playPanel .streamStatus{color:#dce1ea;font-weight:700;min-height:22px}.playPanel .error{margin-top:8px}@media(max-width:650px){.playPanel{margin-top:16px}.playPanel .stream{width:100%;justify-content:center;padding:13px 15px}.playPanel .stream+.stream{width:100%}}
