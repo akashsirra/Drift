@@ -73,23 +73,32 @@ export default function Home(){
     setSelected(full);
     const streamAddons=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));
     if(!streamAddons.length){setNotice("No stream addon is installed. Install a stream-capable addon to get Play options.");return}
-    let merged:Stream[]=[];
-    setNotice("Checking "+streamAddons.length+" stream source(s)…");
-    await Promise.all(streamAddons.map(async x=>{
+    setNotice("Finding the first playable stream…");
+    const pending=streamAddons.map(async x=>{
       try{
         const raw=await fetchAddonStreams(x.url,full.type,full.id);
-        const found=raw.map((s:Stream)=>({...s,__addon:x.name}));
-        if(found.length){
-          merged=[...merged,...found];
-          setStreams([...merged]);
-          const playableNow=merged.filter((s:Stream)=>Boolean(s.url)).length;
-          setNotice("Found "+merged.length+" stream option(s). "+playableNow+" playable in Drift.");
-        }
-      }catch{}
-    }));
+        return {addon:x.name,streams:raw.map((s:Stream)=>({...s,__addon:x.name}))};
+      }catch{return {addon:x.name,streams:[] as Stream[]}}
+    });
+    const deadline=new Promise<{addon:string;streams:Stream[]}>((resolve)=>setTimeout(()=>resolve({addon:"",streams:[]}),16000));
+    const firstPlayable=Promise.race([
+      ...pending.map(p=>p.then(result=>result.streams.some(s=>Boolean(s.url))?result:new Promise<{addon:string;streams:Stream[]}>(resolve=>{
+        const poll=setInterval(()=>{},1000000);
+        void poll;
+        p.then(()=>resolve(result)).catch(()=>resolve(result));
+      }))),
+      deadline
+    ]);
+    let winner=await firstPlayable;
+    if(!winner.streams.length){
+      const results=await Promise.all(pending);
+      winner=results.find(r=>r.streams.length>0)||{addon:"",streams:[]};
+    }
+    const merged=winner.streams;
+    setStreams(merged);
     const playable=merged.filter((s:Stream)=>Boolean(s.url)).length;
     const external=merged.filter((s:Stream)=>!s.url&&Boolean(s.externalUrl)).length;
-    setNotice(merged.length?("Addon returned "+merged.length+" stream option(s). "+playable+" playable in Drift"+(external?" · "+external+" external":"")+"."):"No stream entries were returned for this title.");
+    setNotice(merged.length?("Ready: "+playable+" playable stream"+(playable===1?"":"s")+(external?" · "+external+" external":"")+" from "+winner.addon+"."):"No stream entries were returned within 16 seconds.");
   }catch(e){setError(e instanceof Error?e.message:"Failed to resolve title")}finally{setResolving(false)}
  } async function resolveStreamsFor(m:Meta,requestId?:string,titleOverride?:string){setStreams([]);setResolving(true);setError("");setNotice("");const providers=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!providers.length){setNotice("No stream addon is installed.");return}const requestedId=requestId||m.id;const video=m.videos?.find(v=>v.id===requestedId);const results=await Promise.all(providers.map(async x=>{try{const raw=await fetchAddonStreams(x.url,m.type,requestedId);return raw.map((s:Stream)=>({...s,__addon:x.name,__videoId:requestedId,__season:video?.season,__episode:video?.episode}))}catch{return[]}}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this episode.");if(titleOverride)setSelected({...m,name:titleOverride});setResolving(false)}
  async function openEpisode(m:Meta,v:{id:string;title:string;season?:number;episode?:number}){await resolveStreamsFor(m,v.id,m.name+" — "+v.title)}
