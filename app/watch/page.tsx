@@ -1,9 +1,6 @@
-import dynamic from "next/dynamic";
+"use client";
 
-const DriftPlayer=dynamic(()=>import("./player"),{
-  ssr:false,
-  loading:()=> <main className="watch"><div className="loading">Loading player…</div></main>
-});
+import DriftPlayer from "./player";
 
 export default function WatchPage(){
   return <DriftPlayer/>;
