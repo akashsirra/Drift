@@ -47,6 +47,11 @@ function watchHref(s:Stream,title:string,meta?:Meta,addons:Addon[]=[]){const hin
 export default function Home(){
  const [addons,setAddons]=useState<Addon[]>([]),[url,setUrl]=useState(""),[loading,setLoading]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[selected,setSelected]=useState<Meta|null>(null),[selectedAddon,setSelectedAddon]=useState<Addon|null>(null),[streams,setStreams]=useState<Stream[]>([]),[selectedSeason,setSelectedSeason]=useState(1),[query,setQuery]=useState(""),[testId,setTestId]=useState(""),[testType,setTestType]=useState<"movie"|"series">("movie"),[testing,setTesting]=useState(false),[resolving,setResolving]=useState(false);
  useEffect(()=>{try{setAddons(JSON.parse(localStorage.getItem(KEY)||"[]"))}catch{}},[]);
+ useEffect(()=>{
+  const resetSearch=()=>setQuery("");
+  window.addEventListener("pageshow",resetSearch);
+  return()=>window.removeEventListener("pageshow",resetSearch);
+ },[]);
  function save(a:Addon[]){setAddons(a);localStorage.setItem(KEY,JSON.stringify(a))}
  async function install(){setError("");setNotice("");setLoading(true);try{const normalized=normalizeAddonUrl(url);const r=await fetch("/api/addon/manifest?url="+encodeURIComponent(normalized));const j=await r.json();if(!r.ok)throw Error(j.error||"Could not load addon");if(!j.id||!j.name)throw Error("The URL did not return a valid addon manifest.");const a={...j,url:normalized};save([...addons.filter(x=>x.url!==normalized),a]);setUrl("");setNotice("Installed “"+j.name+"”. "+((j.catalogs||[]).length===0?"This is a stream-only addon; use Stream Resolver below or open a title from another catalog.":""))}catch(e){setError(e instanceof Error?e.message:"Failed to install addon")}finally{setLoading(false)}}
  async function openMeta(a:Addon,m:Meta){
@@ -125,7 +130,7 @@ export default function Home(){
  function library(){if(!selected)return;const old=JSON.parse(localStorage.getItem(LIB)||"[]");if(!old.some((x:Meta)=>x.id===selected.id))localStorage.setItem(LIB,JSON.stringify([...old,selected]));setNotice("Added to Library.")}
  const streamLinks=(items:Stream[],title:string,meta?:Meta)=> <div className="streams">{items.map((s,i)=>s.url?<a key={i} href={watchHref(s,title,meta,addons)} onClick={()=>{try{localStorage.setItem("drift-stream-candidates",JSON.stringify(items.filter(x=>x.url).map(x=>({...x,__videoId:x.__videoId||meta?.id})).slice(0,12)))}catch{}}} className="stream">▶ {s.name||s.title||"Play in Drift"}</a>:s.externalUrl?<a key={i} href={s.externalUrl} target="_blank" rel="noreferrer" className="stream">{s.name||s.title||"Open external"} ↗</a>:<span key={i} className="stream">{s.name||s.title||s.infoHash||"Unsupported stream transport"}</span>)}</div>;
  return <main>
-  <header><a href="/" className="brand">DRIFT</a><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your addons..."/><a className="nav" href="/library">Library</a><a className="nav" href="/addons">Addons</a></header>
+  <header><a href="/" className="brand" onClick={()=>setQuery("")}>DRIFT</a><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your addons..."/><a className="nav" href="/library">Library</a><a className="nav" href="/addons">Addons</a></header>
   <section className="hero"><div className="heroCopy"><span className="eyebrow">DRIFT · LOCAL MEDIA</span><h1>Find something worth watching.</h1><p>Your addons, your library, one fast player. Pick a title and Drift gets you to playback without the clutter.</p></div>{addons.length===0&&<a className="heroCta" href="/addons">＋ Add your first addon</a>}</section>
   <ContinueWatching/>
   {addons.length===0?<section className="empty homeEmpty"><div className="emptyIcon">✦</div><h2>Your Drift starts here.</h2><p>Add a compatible addon to bring catalogs and streams into this local app.</p><a className="primaryAction" href="/addons">Browse addon manager</a></section>:addons.filter(a=>(a.catalogs||[]).length>0).map(a=><AddonSection key={a.url} addon={a} query={query} onOpen={openMeta}/>)}
