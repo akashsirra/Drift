@@ -13,7 +13,7 @@ function normalizeAddonUrl(value:string){const v=value.trim();if(v.startsWith("s
 function streamExpiryMs(raw:string){
  try{
   const u=new URL(raw);
-  for(const key of ["e","exp","expires","expiry","kx"]){
+  for(const key of ["e","exp","expires","expiry","kx","t"]){
    const value=u.searchParams.get(key);
    if(!value)continue;
    const n=Number(value);
