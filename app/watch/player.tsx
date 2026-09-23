@@ -3,11 +3,6 @@ import {Suspense,useEffect,useMemo,useRef,useState} from "react";
 import {useSearchParams} from "next/navigation";
 import Hls from "hls.js";
 
-type DownloadJob={id:string;title:string;url:string;type:"direct"|"hls";status:"queued"|"downloading"|"complete"|"failed";progress:number;createdAt:number;size?:number;blobUrl?:string;error?:string};
-
-const DOWNLOAD_KEY="drift-downloads";
-function loadDownloads():DownloadJob[]{try{return JSON.parse(localStorage.getItem(DOWNLOAD_KEY)||"[]")}catch{return[]}}
-function saveDownloads(x:DownloadJob[]){localStorage.setItem(DOWNLOAD_KEY,JSON.stringify(x.map(({blobUrl,...j})=>j)))}
 type Subtitle={url:string;lang?:string;label?:string;id?:string};
 type Level={height:number;bitrate:number};
 type AudioTrack={id:number;name:string;lang?:string;groupId?:string};
@@ -39,7 +34,7 @@ function P(){
  const videoRef=useRef<HTMLVideoElement|null>(null),playerRef=useRef<HTMLDivElement|null>(null),hlsRef=useRef<Hls|null>(null),hideRef=useRef<ReturnType<typeof setTimeout>|null>(null);
  const [mounted,setMounted]=useState(false),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0),[fallbackIndex,setFallbackIndex]=useState(0),[fallbackName,setFallbackName]=useState(""),[candidates,setCandidates]=useState<{url:string;name?:string;title?:string;__addon?:string;behaviorHints?:Record<string,unknown>}[]>([]);
  const refreshKeyRef=useRef("");
- const [playing,setPlaying]=useState(false),[current,setCurrent]=useState(0),[volume,setVolume]=useState(1),[speed,setSpeed]=useState(1),[zoom,setZoom]=useState(1),[aspect,setAspect]=useState<"contain"|"cover"|"fill">("contain"),[rotate,setRotate]=useState(0),[fullscreen,setFullscreen]=useState(false),[pip,setPip]=useState(false),[levels,setLevels]=useState<Level[]>([]),[level,setLevel]=useState(-1),[audioTracks,setAudioTracks]=useState<AudioTrack[]>([]),[audioTrack,setAudioTrack]=useState(-1),[menu,setMenu]=useState<"cc"|"quality"|"speed"|"audio"|"more"|null>(null),[showControls,setShowControls]=useState(true),[nextCountdown,setNextCountdown]=useState(0),[nextLoading,setNextLoading]=useState(false),[downloadMessage,setDownloadMessage]=useState(""),[downloadProgress,setDownloadProgress]=useState(0),[downloadBusy,setDownloadBusy]=useState(false);
+ const [playing,setPlaying]=useState(false),[current,setCurrent]=useState(0),[volume,setVolume]=useState(1),[speed,setSpeed]=useState(1),[zoom,setZoom]=useState(1),[aspect,setAspect]=useState<"contain"|"cover"|"fill">("contain"),[rotate,setRotate]=useState(0),[fullscreen,setFullscreen]=useState(false),[pip,setPip]=useState(false),[levels,setLevels]=useState<Level[]>([]),[level,setLevel]=useState(-1),[audioTracks,setAudioTracks]=useState<AudioTrack[]>([]),[audioTrack,setAudioTrack]=useState(-1),[menu,setMenu]=useState<"cc"|"quality"|"speed"|"audio"|"more"|null>(null),[showControls,setShowControls]=useState(true),[nextCountdown,setNextCountdown]=useState(0),[nextLoading,setNextLoading]=useState(false);
  const subs=useMemo<Subtitle[]>(()=>{try{return JSON.parse(atob(p.get("subs")||""))||[]}catch{return[]}},[p]);
  const progressKey=episodeId?(type+":"+episodeId):(id?(type+":"+id):("url:"+u));
  const requestId=episodeId||id;
@@ -144,24 +139,6 @@ refreshStreamCandidates().then(ok=>{
 
  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(["INPUT","TEXTAREA","SELECT"].includes((e.target as HTMLElement)?.tagName))return; if(e.key===" "){e.preventDefault();togglePlay()}else if(e.key==="ArrowLeft")seek(e.shiftKey?-30:-10);else if(e.key==="ArrowRight")seek(e.shiftKey?30:10);else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key.toLowerCase()==="m"){const v=videoRef.current;if(v){v.muted=!v.muted;setVolume(v.muted?0:v.volume)}}else if(e.key.toLowerCase()==="p")togglePip();else if(e.key==="+"||e.key==="=")changeZoom(zoom+.1);else if(e.key==="-")changeZoom(zoom-.1);};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[zoom]);
  useEffect(()=>{if(!nextCountdown)return;const timer=setTimeout(()=>{if(nextCountdown<=1)goNext();else setNextCountdown(x=>x-1)},1000);return()=>clearTimeout(timer)},[nextCountdown]);
- async function startDownload(){
-  if(downloadBusy)return;
-  const hls=isHls;const job:DownloadJob={id:crypto.randomUUID(),title:t,url:active,type:hls?"hls":"direct",status:"queued",progress:0,createdAt:Date.now()};
-  saveDownloads([job,...loadDownloads()]);setNoticeForDownload(job.id,"downloading");setDownloadBusy(true);setDownloadProgress(0);setDownloadMessage(hls?"Preparing HLS download with FFmpeg…":"Preparing download…");
-  try{
-    const endpoint="/api/media/download?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):"")+"&name="+encodeURIComponent(t);
-    const r=await fetch(endpoint);
-    if(!r.ok){const body=await r.text();throw new Error(body||("Download request failed ("+r.status+")"))}
-    const total=Number(r.headers.get("content-length")||0);let done=0;const chunks:Uint8Array[]=[];const reader=r.body?.getReader();
-    if(!reader)throw new Error("Download stream is unavailable.");
-    for(;;){const part=await reader.read();if(part.done)break;if(part.value){chunks.push(part.value);done+=part.value.byteLength;const pct=total?Math.min(99,done/total*100):0;setDownloadProgress(pct);updateDownload(job.id,{status:"downloading",progress:pct,size:done})}}
-    const blob=new Blob(chunks,{type:r.headers.get("content-type")||"video/mp4"});const blobUrl=URL.createObjectURL(blob);const a=document.createElement("a");a.href=blobUrl;a.download=safeFileName(t)+guessExt(active);a.click();setTimeout(()=>URL.revokeObjectURL(blobUrl),60000);
-    updateDownload(job.id,{status:"complete",progress:100,size:blob.size});setDownloadProgress(100);setDownloadMessage("Download complete.");
-  }catch(e){updateDownload(job.id,{status:"failed",progress:0,error:e instanceof Error?e.message:"Download failed"});setDownloadMessage(e instanceof Error?e.message:"Download failed");}
-  finally{setDownloadBusy(false)}
- }
- function updateDownload(id:string,patch:Partial<DownloadJob>){const next=loadDownloads().map(x=>x.id===id?{...x,...patch}:x);saveDownloads(next)}
- function setNoticeForDownload(id:string,status:"downloading"){updateDownload(id,{status,progress:0})}
  async function refreshStreamCandidates(){
   if(!requestId||!addonUrls.length)return false;
   try{
@@ -206,7 +183,7 @@ function toggleRotate(){setRotate(x=>(x+90)%360);touchControls()}
 <div className="menuBox"><button onClick={()=>setMenu(menu==="more"?null:"more")}>⋮ More</button>{menu==="more"&&<div className="popMenu moreMenu"><strong>Zoom {Math.round(zoom*100)}%</strong><div className="zoomRow"><button onClick={()=>changeZoom(zoom-.1)}>−</button><button onClick={()=>changeZoom(1)}>100%</button><button onClick={()=>changeZoom(zoom+.1)}>＋</button></div><button onClick={()=>changeZoom(.5)}>50%</button><button onClick={()=>changeZoom(1.25)}>125%</button><button onClick={()=>changeZoom(1.5)}>150%</button><button onClick={()=>changeZoom(2)}>200%</button><button onClick={()=>changeZoom(3)}>300%</button><button onClick={()=>changeAspect("contain")}>Fit</button><button onClick={()=>changeAspect("cover")}>Fill / Crop</button><button onClick={()=>changeAspect("fill")}>Stretch</button><button onClick={toggleRotate}>Rotate 90°</button><button onClick={resetView}>Reset view</button></div>}</div>
 <button onClick={togglePip}>{pip?"▣":"PiP"}</button><button onClick={toggleFullscreen}>{fullscreen?"⤢":"⛶"}</button>{(isMedia||isHls||isMkv)&&<button className="downloadBtn" onClick={startDownload} title={isHls?"Download HLS as MP4":"Download video"}>⇩</button>}</div></div>}
  {nextCountdown>0&&<div className="nextOverlay"><strong>Next episode in {nextCountdown}</strong><span>{nextTitle}</span><div><button onClick={goNext} disabled={nextLoading}>{nextLoading?"Loading…":"Play now"}</button><button onClick={()=>setNextCountdown(0)}>Cancel</button></div></div>}
- </div>{resume>0&&<p className="resumeNote">Resuming from {fmt(resume)}</p>}{downloadMessage&&<div className="playerNotice"><h2>{downloadBusy?"Downloading…":downloadProgress>=100?"Download complete":"Download"}</h2><p>{downloadMessage}</p>{downloadBusy&&<><div className="downloadProgressTrack"><i style={{width:(downloadProgress>0?downloadProgress:100)+"%"}}/></div><strong className="downloadProgressText">{downloadProgress>0?Math.round(downloadProgress)+"%":"Preparing…"}</strong></>}</div>}{error&&<div className="playerNotice"><h2>Playback error</h2><p>{error}</p><div className="playerErrorActions"><button onClick={()=>{setError("Refreshing stream…");refreshStreamCandidates()}}>↻ Refresh stream</button><button onClick={()=>history.back()}>← Back</button></div><code>{u}</code></div>}</main>
+ </div>{resume>0&&<p className="resumeNote">Resuming from {fmt(resume)}</p>}{error&&<div className="playerNotice"><h2>Playback error</h2><p>{error}</p><div className="playerErrorActions"><button onClick={()=>{setError("Refreshing stream…");refreshStreamCandidates()}}>↻ Refresh stream</button><button onClick={()=>history.back()}>← Back</button></div><code>{u}</code></div>}</main>
 }
 function safeFileName(x:string){return (x.replace(/[^a-z0-9._ -]/gi,"").trim()||"Drift").slice(0,80)}
 function guessExt(u:string){const m=u.match(/\.(mp4|webm|ogg)(?:\?|$)/i);return m?"."+m[1].toLowerCase():".mp4"}
