@@ -11,6 +11,21 @@ function saveDownloads(x:DownloadJob[]){localStorage.setItem(DOWNLOAD_KEY,JSON.s
 type Subtitle={url:string;lang?:string;label?:string;id?:string};
 type Level={height:number;bitrate:number};
 type AudioTrack={id:number;name:string;lang?:string;groupId?:string};
+function streamExpiryMs(raw:string){
+ try{
+  const u=new URL(raw);
+  for(const key of ["e","exp","expires","expiry","kx"]){
+   const value=u.searchParams.get(key);
+   if(!value)continue;
+   const n=Number(value);
+   if(!Number.isFinite(n))continue;
+   const ms=n<100000000000? n*1000:n;
+   if(ms>0)return ms;
+  }
+ }catch{}
+ return 0;
+}
+function streamIsExpired(raw:string){const exp=streamExpiryMs(raw);return exp>0&&exp<=Date.now();}
 function P(){
  const p=useSearchParams(),u=p.get("url")||"",t=p.get("title")||"Drift Player",ph=p.get("ph")||"",id=p.get("id")||"",type=p.get("type")||"movie",poster=p.get("poster")||"",episodeId=p.get("episodeId")||"",season=p.get("season")||"",episode=p.get("episode")||"",nextId=p.get("nextId")||"",nextTitle=p.get("nextTitle")||"",nextSeason=p.get("nextSeason")||"",nextEpisode=p.get("nextEpisode")||"";
  const [addonUrls]=useState<string[]>(()=>{try{return JSON.parse(atob(p.get("addons")||""))||[]}catch{return[]}});
@@ -19,14 +34,29 @@ function P(){
  const [playing,setPlaying]=useState(false),[current,setCurrent]=useState(0),[volume,setVolume]=useState(1),[speed,setSpeed]=useState(1),[zoom,setZoom]=useState(1),[aspect,setAspect]=useState<"contain"|"cover"|"fill">("contain"),[rotate,setRotate]=useState(0),[fullscreen,setFullscreen]=useState(false),[pip,setPip]=useState(false),[levels,setLevels]=useState<Level[]>([]),[level,setLevel]=useState(-1),[audioTracks,setAudioTracks]=useState<AudioTrack[]>([]),[audioTrack,setAudioTrack]=useState(-1),[menu,setMenu]=useState<"cc"|"quality"|"speed"|"audio"|"more"|null>(null),[showControls,setShowControls]=useState(true),[nextCountdown,setNextCountdown]=useState(0),[nextLoading,setNextLoading]=useState(false),[downloadMessage,setDownloadMessage]=useState(""),[downloadProgress,setDownloadProgress]=useState(0),[downloadBusy,setDownloadBusy]=useState(false);
  const subs=useMemo<Subtitle[]>(()=>{try{return JSON.parse(atob(p.get("subs")||""))||[]}catch{return[]}},[p]);
  const progressKey=episodeId?(type+":"+episodeId):(id?(type+":"+id):("url:"+u));
- useEffect(()=>{try{const x=JSON.parse(localStorage.getItem("drift-stream-candidates")||"[]");if(Array.isArray(x))setCandidates(x.filter((s:any)=>s?.url))}catch{}},[]);
+ useEffect(()=>{
+  try{
+    const x=JSON.parse(localStorage.getItem("drift-stream-candidates")||"[]");
+    if(Array.isArray(x)){
+      const fresh=x.filter((s:any)=>s?.url&&!streamIsExpired(s.url));
+      setCandidates(fresh);
+      localStorage.setItem("drift-stream-candidates",JSON.stringify(fresh));
+    }
+  }catch{}
+ },[]);
  const active=candidates[fallbackIndex]?.url||u,activeHints:any=candidates[fallbackIndex]?.behaviorHints||{},activePh=fallbackIndex&&activeHints.proxyHeaders?.request?btoa(JSON.stringify(activeHints.proxyHeaders.request)):ph;
  const isHls=/\.m3u8(\?|$)/i.test(active),isMedia=/\.(mp4|webm|ogg)(\?|$)/i.test(active);
  useEffect(()=>setMounted(true),[]);
  const touchControls=()=>{setShowControls(true);if(hideRef.current)clearTimeout(hideRef.current);hideRef.current=setTimeout(()=>setShowControls(false),3500)};
  useEffect(()=>{touchControls();return()=>{if(hideRef.current)clearTimeout(hideRef.current)}},[]);
  useEffect(()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");const item=all[progressKey];if(item?.position>5&&item?.position<Math.max(item.duration-30,0))setResume(item.position)}catch{}},[progressKey]);
- useEffect(()=>{const v=videoRef.current;if(!v||!u)return;setError("");const save=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");all[progressKey]={id,type,title:t,poster,url:u,ph,subs,episodeId,season,episode,position:v.currentTime||0,duration:v.duration||duration,updatedAt:Date.now()};localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}};const onTime=()=>{setCurrent(v.currentTime);if(Math.floor(v.currentTime)%5===0)save()};const onPlay=()=>setPlaying(true),onPause=()=>{setPlaying(false);save()};const onLoaded=()=>{setDuration(v.duration||0);if(resume>0&&resume<v.duration-30){try{v.currentTime=resume}catch{}}};const onEnded=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");delete all[progressKey];localStorage.setItem("drift-progress",JSON.stringify(all))}catch{};if(nextId)setNextCountdown(5)};const onVideoError=()=>{if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("Playback failed. Trying another available stream…")}else setError("The video could not be played. The stream may have expired or rejected the request.")};
+ useEffect(()=>{
+  if((isHls||isMedia)&&streamIsExpired(active)){
+    setError("Refreshing expired stream…");
+    refreshStreamCandidates();
+    return;
+  }
+  const v=videoRef.current;if(!v||!u)return;setError("");const save=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");all[progressKey]={id,type,title:t,poster,url:u,ph,subs,episodeId,season,episode,position:v.currentTime||0,duration:v.duration||duration,updatedAt:Date.now()};localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}};const onTime=()=>{setCurrent(v.currentTime);if(Math.floor(v.currentTime)%5===0)save()};const onPlay=()=>setPlaying(true),onPause=()=>{setPlaying(false);save()};const onLoaded=()=>{setDuration(v.duration||0);if(resume>0&&resume<v.duration-30){try{v.currentTime=resume}catch{}}};const onEnded=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");delete all[progressKey];localStorage.setItem("drift-progress",JSON.stringify(all))}catch{};if(nextId)setNextCountdown(5)};const onVideoError=()=>{if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("Playback failed. Trying another available stream…")}else setError("The video could not be played. The stream may have expired or rejected the request.")};
  v.addEventListener("timeupdate",onTime);v.addEventListener("play",onPlay);v.addEventListener("pause",onPause);v.addEventListener("loadedmetadata",onLoaded);v.addEventListener("ended",onEnded);v.addEventListener("error",onVideoError);
  if(isHls){if(Hls.isSupported()){const h=new Hls({enableWorker:false,lowLatencyMode:false,backBufferLength:90});hlsRef.current=h;h.attachMedia(v);h.on(Hls.Events.MANIFEST_PARSED,()=>{setLevels(h.levels.map(x=>({height:x.height||0,bitrate:x.bitrate||0})));setAudioTracks(h.audioTracks.map(x=>({id:x.id,name:x.name||x.lang||("Audio "+(x.id+1)),lang:x.lang,groupId:x.groupId})));setAudioTrack(h.audioTrack);v.play().catch(()=>{})});
 h.on(Hls.Events.AUDIO_TRACKS_UPDATED,(_,data)=>{setAudioTracks((data.audioTracks||[]).map((x:any)=>({id:x.id,name:x.name||x.lang||("Audio "+(x.id+1)),lang:x.lang,groupId:x.groupId})));setAudioTrack(h.audioTrack)});
