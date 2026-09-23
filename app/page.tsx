@@ -13,30 +13,43 @@ function normalizeAddonUrl(value:string){const v=value.trim();if(v.startsWith("s
 function watchHref(s:Stream,title:string,meta?:Meta,addons:Addon[]=[]){const hints:any=s.behaviorHints||{};const subs=(hints.subtitles||hints.subtitle||s.subtitles||[]);const episodeId=(hints as any).videoId||((s as any).season!=null&&(s as any).episode!=null?meta?.id+":"+((s as any).season)+":"+((s as any).episode):""); const idx=meta?.videos?.findIndex(v=>(hints as any).videoId===v.id||((s as any).season!=null&&(s as any).episode!=null&&v.season===(s as any).season&&v.episode===(s as any).episode))??-1; const next=meta?.videos&&idx>=0?meta.videos[idx+1]:undefined; const streamAddonUrls=addons.filter(a=>Array.isArray(a.resources)&&a.resources.some((r:any)=>r==="stream"||(r?.name==="stream"))).map(a=>a.url); const params=new URLSearchParams({url:s.url||"",title,ph:btoa(JSON.stringify(hints.proxyHeaders?.request||{})),id:meta?.id||"",type:meta?.type||"",poster:meta?.poster||"",subs:btoa(JSON.stringify(subs)),episodeId,season:String((s as any).season??""),episode:String((s as any).episode??""),nextId:next?.id||"",nextTitle:next?.title||"",nextSeason:String(next?.season??""),nextEpisode:String(next?.episode??""),addons:btoa(JSON.stringify(streamAddonUrls))});return "/watch?"+params.toString()}
 
 export default function Home(){
- const [addons,setAddons]=useState<Addon[]>([]),[url,setUrl]=useState(""),[loading,setLoading]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[selected,setSelected]=useState<Meta|null>(null),[streams,setStreams]=useState<Stream[]>([]),[query,setQuery]=useState(""),[testId,setTestId]=useState(""),[testType,setTestType]=useState<"movie"|"series">("movie"),[testing,setTesting]=useState(false);
+ const [addons,setAddons]=useState<Addon[]>([]),[url,setUrl]=useState(""),[loading,setLoading]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[selected,setSelected]=useState<Meta|null>(null),[streams,setStreams]=useState<Stream[]>([]),[selectedSeason,setSelectedSeason]=useState(1),[query,setQuery]=useState(""),[testId,setTestId]=useState(""),[testType,setTestType]=useState<"movie"|"series">("movie"),[testing,setTesting]=useState(false);
  useEffect(()=>{try{setAddons(JSON.parse(localStorage.getItem(KEY)||"[]"))}catch{}},[]);
  function save(a:Addon[]){setAddons(a);localStorage.setItem(KEY,JSON.stringify(a))}
  async function install(){setError("");setNotice("");setLoading(true);try{const normalized=normalizeAddonUrl(url);const r=await fetch("/api/addon/manifest?url="+encodeURIComponent(normalized));const j=await r.json();if(!r.ok)throw Error(j.error||"Could not load addon");if(!j.id||!j.name)throw Error("The URL did not return a valid addon manifest.");const a={...j,url:normalized};save([...addons.filter(x=>x.url!==normalized),a]);setUrl("");setNotice("Installed “"+j.name+"”. "+((j.catalogs||[]).length===0?"This is a stream-only addon; use Stream Resolver below or open a title from another catalog.":""))}catch(e){setError(e instanceof Error?e.message:"Failed to install addon")}finally{setLoading(false)}}
  async function openMeta(a:Addon,m:Meta){
-  setSelected(m);setStreams([]);setError("");setNotice("");
+  setSelected(m);setSelectedSeason(1);setStreams([]);setError("");setNotice("");
   try{
     const metaResult=await fetch("/api/addon/resource?addon="+encodeURIComponent(a.url)+"&resource=meta&type="+m.type+"&id="+encodeURIComponent(m.id));
-    if(metaResult.ok){const j=await metaResult.json();setSelected(j.meta?.[0]||m)}
-    const streamAddons=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));
-    if(!streamAddons.length){
-      setNotice("No stream addon is installed. Install a stream-capable addon to get Play options.");
-      return;
+    let full:Meta=m;
+    if(metaResult.ok){const j=await metaResult.json();full=j.meta?.[0]||m}
+    if(full.type==="series"){
+      try{
+        const er=await fetch("/api/series/episodes?imdb="+encodeURIComponent(full.id));
+        if(er.ok){
+          const ej=await er.json();
+          const fallback=(ej.seasons||[]).flatMap((x:any)=>x.episodes||[]);
+          const map=new Map<string,any>();
+          for(const v of (full.videos||[]))map.set(v.id,v);
+          for(const v of fallback)if(!map.has(v.id))map.set(v.id,v);
+          full={...full,videos:[...map.values()].sort((x:any,y:any)=>(x.season||0)-(y.season||0)||(x.episode||0)-(y.episode||0))};
+          const first=full.videos?.find(v=>(v.season||0)>0)?.season;
+          if(first)setSelectedSeason(first);
+        }
+      }catch{}
     }
+    setSelected(full);
+    const streamAddons=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));
+    if(!streamAddons.length){setNotice("No stream addon is installed. Install a stream-capable addon to get Play options.");return}
     const results=await Promise.all(streamAddons.map(async x=>{
       try{
-        const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(x.url)+"&resource=stream&type="+m.type+"&id="+encodeURIComponent(m.id));
+        const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(x.url)+"&resource=stream&type="+full.type+"&id="+encodeURIComponent(full.id));
         if(!r.ok)return [];
         const j=await r.json();
         return (j.streams||[]).map((s:Stream)=>({...s,__addon:x.name}));
       }catch{return []}
     }));
-    const merged=results.flat();
-    setStreams(merged);
+    const merged=results.flat();setStreams(merged);
     setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this title.");
   }catch(e){setError(e instanceof Error?e.message:"Failed to resolve title")}
  } async function resolveStreamsFor(m:Meta,requestId?:string,titleOverride?:string){setStreams([]);setError("");setNotice("");const providers=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!providers.length){setNotice("No stream addon is installed.");return}const results=await Promise.all(providers.map(async x=>{try{const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(x.url)+"&resource=stream&type="+m.type+"&id="+encodeURIComponent(requestId||m.id));if(!r.ok)return [];const j=await r.json();return(j.streams||[]).map((s:Stream)=>({...s,__addon:x.name}))}catch{return []}}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this episode.");if(titleOverride)setSelected({...m,name:titleOverride})}
@@ -48,8 +61,14 @@ export default function Home(){
   <header><a href="/" className="brand">DRIFT</a><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your addons..."/><a className="nav" href="/library">Library</a><a className="nav" href="/addons">Addons</a></header>
   <section className="hero"><span className="eyebrow">YOUR CONTENT. YOUR ADDONS.</span><h1>One home for your media.</h1><p>Install compatible addons, browse catalogs and resolve streams in one clean interface.</p></section>
   {addons.filter(a=>(a.catalogs||[]).length>0).map(a=><AddonSection key={a.url} addon={a} query={query} onOpen={openMeta}/>)}
-  {selected&&<div className="modal"><div className="modalCard"><button className="close" onClick={()=>setSelected(null)}>×</button><div className="detail">{selected.poster&&<img src={selected.poster}/>}<div><span>{selected.type}</span><h2>{selected.name}</h2><p>{selected.description}</p><p>{selected.releaseInfo}</p><div className="actions"><button onClick={library}>＋ Library</button></div>{selected.type==="series"&&selected.videos?.length?<div className="episodeList"><strong>Episodes</strong>{selected.videos.map((v,i)=><button key={v.id||i} onClick={()=>openEpisode(selected,v)}>S{v.season??"?"} E{v.episode??"?"} · {v.title}</button>)}</div>:null}{streamLinks(streams,selected.name,selected)}</div></div></div></div>}
+  {selected&&<div className="modal"><div className="modalCard"><button className="close" onClick={()=>setSelected(null)}>×</button><div className="detail">{selected.poster&&<img src={selected.poster}/>}<div><span>{selected.type}</span><h2>{selected.name}</h2><p>{selected.description}</p><p>{selected.releaseInfo}</p><div className="actions"><button onClick={library}>＋ Library</button></div>{selected.type==="series"&&selected.videos?.length?<EpisodePicker meta={selected} season={selectedSeason} setSeason={setSelectedSeason} onEpisode={openEpisode}/>:null}{streamLinks(streams,selected.name,selected)}</div></div></div></div>}
  </main>
+}
+
+function EpisodePicker({meta,season,setSeason,onEpisode}:{meta:Meta;season:number;setSeason:(n:number)=>void;onEpisode:(m:Meta,v:any)=>void}){
+ const seasons=[...new Set((meta.videos||[]).map(v=>v.season).filter((x):x is number=>Number.isInteger(x)&&x>0))].sort((a,b)=>a-b);
+ const episodes=(meta.videos||[]).filter(v=>v.season===season).sort((a,b)=>(a.episode||0)-(b.episode||0));
+ return <div className="episodePicker"><strong>Episodes</strong><div className="seasonTabs">{seasons.map(x=><button key={x} className={x===season?"active":""} onClick={()=>setSeason(x)}>Season {x}</button>)}</div><div className="episodeList">{episodes.map((v,i)=><button key={v.id||i} onClick={()=>onEpisode(meta,v)}>S{v.season} E{v.episode} · {v.title}</button>)}</div><a className="tvmazeCredit" href="https://www.tvmaze.com/" target="_blank" rel="noreferrer">Episode data by TVmaze</a></div>
 }
 
 function AddonSection({addon,query,onOpen}:{addon:Addon;query:string;onOpen:(a:Addon,m:Meta)=>void}){
