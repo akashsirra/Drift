@@ -30,7 +30,7 @@ function P(){
  const p=useSearchParams(),u=p.get("url")||"",t=p.get("title")||"Drift Player",ph=p.get("ph")||"",id=p.get("id")||"",type=p.get("type")||"movie",poster=p.get("poster")||"",episodeId=p.get("episodeId")||"",season=p.get("season")||"",episode=p.get("episode")||"",nextId=p.get("nextId")||"",nextTitle=p.get("nextTitle")||"",nextSeason=p.get("nextSeason")||"",nextEpisode=p.get("nextEpisode")||"";
  const [addonUrls]=useState<string[]>(()=>{try{return JSON.parse(atob(p.get("addons")||""))||[]}catch{return[]}});
  const videoRef=useRef<HTMLVideoElement|null>(null),hlsRef=useRef<Hls|null>(null),hideRef=useRef<ReturnType<typeof setTimeout>|null>(null);
- const [mounted,setMounted]=useState(false),[error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0),[fallbackIndex,setFallbackIndex]=useState(0),[fallbackName,setFallbackName]=useState(""),[candidates,setCandidates]=useState<{url:string;name?:string;title?:string;behaviorHints?:Record<string,unknown>}[]>([]);
+ const [mounted,setMounted]=useState(false),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0),[fallbackIndex,setFallbackIndex]=useState(0),[fallbackName,setFallbackName]=useState(""),[candidates,setCandidates]=useState<{url:string;name?:string;title?:string;behaviorHints?:Record<string,unknown>}[]>([]);
  const [playing,setPlaying]=useState(false),[current,setCurrent]=useState(0),[volume,setVolume]=useState(1),[speed,setSpeed]=useState(1),[zoom,setZoom]=useState(1),[aspect,setAspect]=useState<"contain"|"cover"|"fill">("contain"),[rotate,setRotate]=useState(0),[fullscreen,setFullscreen]=useState(false),[pip,setPip]=useState(false),[levels,setLevels]=useState<Level[]>([]),[level,setLevel]=useState(-1),[audioTracks,setAudioTracks]=useState<AudioTrack[]>([]),[audioTrack,setAudioTrack]=useState(-1),[menu,setMenu]=useState<"cc"|"quality"|"speed"|"audio"|"more"|null>(null),[showControls,setShowControls]=useState(true),[nextCountdown,setNextCountdown]=useState(0),[nextLoading,setNextLoading]=useState(false),[downloadMessage,setDownloadMessage]=useState(""),[downloadProgress,setDownloadProgress]=useState(0),[downloadBusy,setDownloadBusy]=useState(false);
  const subs=useMemo<Subtitle[]>(()=>{try{return JSON.parse(atob(p.get("subs")||""))||[]}catch{return[]}},[p]);
  const progressKey=episodeId?(type+":"+episodeId):(id?(type+":"+id):("url:"+u));
@@ -52,8 +52,11 @@ function P(){
  useEffect(()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");const item=all[progressKey];if(item?.position>5&&item?.position<Math.max(item.duration-30,0))setResume(item.position)}catch{}},[progressKey]);
  useEffect(()=>{
   if((isHls||isMedia)&&streamIsExpired(active)){
-    setError("Refreshing expired stream…");
-    refreshStreamCandidates();
+    if(!refreshing){
+      setRefreshing(true);
+      setError("Refreshing expired stream…");
+      refreshStreamCandidates().finally(()=>setRefreshing(false));
+    }
     return;
   }
   const v=videoRef.current;if(!v||!u)return;setError("");const save=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");all[progressKey]={id,type,title:t,poster,url:u,ph,subs,episodeId,season,episode,position:v.currentTime||0,duration:v.duration||duration,updatedAt:Date.now()};localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}};const onTime=()=>{setCurrent(v.currentTime);if(Math.floor(v.currentTime)%5===0)save()};const onPlay=()=>setPlaying(true),onPause=()=>{setPlaying(false);save()};const onLoaded=()=>{setDuration(v.duration||0);if(resume>0&&resume<v.duration-30){try{v.currentTime=resume}catch{}}};const onEnded=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");delete all[progressKey];localStorage.setItem("drift-progress",JSON.stringify(all))}catch{};if(nextId)setNextCountdown(5)};const onVideoError=()=>{if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("Playback failed. Trying another available stream…")}else setError("The video could not be played. The stream may have expired or rejected the request.")};
@@ -91,6 +94,7 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
  async function refreshStreamCandidates(){
   const requestId=episodeId||id;
   if(!requestId||!addonUrls.length)return false;
+  setRefreshing(true);
   try{
     const fresh=(await Promise.all(addonUrls.map(async a=>{
       try{
@@ -109,6 +113,7 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
     setError("");
     return true;
   }catch{return false}
+  finally{setRefreshing(false)}
 }
  async function goNext(){if(!nextId||nextLoading)return;setNextLoading(true);try{const rs=await Promise.all(addonUrls.map(async a=>{try{const r=await fetch("/api/addon/resource?addon="+encodeURIComponent(a)+"&resource=stream&type="+type+"&id="+encodeURIComponent(nextId));if(!r.ok)return[];const j=await r.json();return j.streams||[]}catch{return[]}}));const all=rs.flat().filter((s:any)=>s?.url);if(!all.length){setError("Next episode has no playable stream.");setNextCountdown(0);return}localStorage.setItem("drift-stream-candidates",JSON.stringify(all.slice(0,12)));const s=all[0],h=s.behaviorHints||{},sp=new URLSearchParams({url:s.url,title:nextTitle||"Next episode",ph:btoa(JSON.stringify(h.proxyHeaders?.request||{})),id,type,poster,subs:btoa(JSON.stringify(s.subtitles||[])),episodeId:nextId,season:nextSeason,episode:nextEpisode,nextId:"",nextTitle:"",nextSeason:"",nextEpisode:"",addons:btoa(JSON.stringify(addonUrls))});window.location.href="/watch?"+sp.toString()}finally{setNextLoading(false)}}
  async function togglePlay(){const v=videoRef.current;if(!v)return;if(v.paused)await v.play();else v.pause();touchControls()}
