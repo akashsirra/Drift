@@ -41,3 +41,47 @@
 .playPanel{margin-top:18px;padding:14px 0 2px;border-top:1px solid #2a2e38}.playLabel{margin-top:12px;margin-bottom:8px;color:#737c8e;font-size:11px;font-weight:900;letter-spacing:.14em}.playPanel .streams{margin-top:8px}.playPanel .stream{display:inline-flex;align-items:center;background:#fff;color:#08090c;font-weight:900}.playPanel .stream:hover{background:#e8eaf0}.playPanel .stream+.stream{background:#20242d;color:#fff}.playPanel .streamStatus{color:#dce1ea;font-weight:700;min-height:22px}.playPanel .error{margin-top:8px}@media(max-width:650px){.playPanel{margin-top:16px}.playPanel .stream{width:100%;justify-content:center;padding:13px 15px}.playPanel .stream+.stream{width:100%}}
 
 .playerShell:fullscreen{display:flex;align-items:center;justify-content:center}.playerShell:fullscreen .video{transform:scale(var(--drift-zoom,1)) rotate(var(--drift-rotate,0deg));object-fit:var(--drift-fit,contain);width:100%;height:100%}.playerShell .video[data-zoom="0.5"]{--drift-zoom:.5}.playerShell .video[data-zoom="1"]{--drift-zoom:1}.playerShell .video[data-zoom="1.25"]{--drift-zoom:1.25}.playerShell .video[data-zoom="1.5"]{--drift-zoom:1.5}.playerShell .video[data-zoom="2"]{--drift-zoom:2}.playerShell .video[data-zoom="3"]{--drift-zoom:3}.playerShell .video[data-aspect="contain"]{--drift-fit:contain}.playerShell .video[data-aspect="cover"]{--drift-fit:cover}.playerShell .video[data-aspect="fill"]{--drift-fit:fill}.playerShell .video[data-rotate="0"]{--drift-rotate:0deg}.playerShell .video[data-rotate="90"]{--drift-rotate:90deg}.playerShell .video[data-rotate="180"]{--drift-rotate:180deg}.playerShell .video[data-rotate="270"]{--drift-rotate:270deg}
+
+
+/* Drift product polish */
+.hero{min-height:360px;display:flex;align-items:flex-end;justify-content:space-between;gap:28px;padding:76px 0 48px}
+.heroCopy{max-width:820px}
+.heroCta,.primaryAction{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:#fff;color:#08090c;border:1px solid #fff;border-radius:12px;padding:12px 16px;font-weight:850;white-space:nowrap}
+.heroCta:hover,.primaryAction:hover{transform:translateY(-1px)}
+.compactHero{min-height:300px}
+.homeEmpty{margin:10px 0 60px;padding:72px 24px;border:1px solid #242832;border-radius:22px;background:radial-gradient(circle at 50% 0%,#171b24 0,#101218 46%,#0d0f14 100%)}
+.homeEmpty h2{margin:14px 0 8px;font-size:28px}
+.homeEmpty p{max-width:520px;margin:0 auto 22px;color:#969faf;line-height:1.6}
+.emptyIcon{width:54px;height:54px;margin:auto;display:grid;place-items:center;border:1px solid #343a46;border-radius:16px;background:#171a22}
+.catalog{margin:28px 0 44px}
+.catalog .sectionHead{padding:0 2px}
+.grid{row-gap:22px}
+.card strong{font-size:14px}
+.card small{font-size:12px}
+.card img,.posterFallback{border-radius:12px}
+.advancedPanel{padding:0;overflow:hidden}
+.advancedPanel summary{cursor:pointer;list-style:none;padding:18px 22px;font-weight:800}
+.advancedPanel summary::-webkit-details-marker{display:none}
+.advancedPanel summary:after{content:"＋";float:right;color:#7f8797}
+.advancedPanel[open] summary:after{content:"−"}
+.advancedBody{padding:0 22px 22px;border-top:1px solid #242832}
+.installedSection{margin-top:34px}
+.addon{transition:transform .18s ease,border-color .18s ease,background .18s ease}
+.addon:hover{transform:translateY(-1px);border-color:#353b48;background:#12151c}
+.libraryGrid .card{position:relative}
+.libraryGrid .libraryRemove{width:100%}
+header{transition:background .2s ease}
+header input{transition:border-color .18s ease,background .18s ease}
+header input:focus{border-color:#555d6d;background:#181b23}
+.stream{will-change:transform}
+@media(max-width:650px){
+  .hero{min-height:300px;display:block;padding:54px 0 34px}
+  .heroCta{margin-top:22px;width:100%}
+  .compactHero{min-height:250px}
+  .homeEmpty{margin:0 0 34px;padding:54px 18px}
+  .sectionHead{gap:8px}
+  .catalog{margin:24px 0 34px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
