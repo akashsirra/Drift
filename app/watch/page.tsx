@@ -22,7 +22,7 @@ async function downloadMedia(job:DownloadJob,ph:string,onUpdate:(p:number)=>void
  const lines=playlist.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);const segs=lines.filter(x=>!x.startsWith("#"));
  if(!segs.length)throw Error("No HLS segments found.");
  const base=new URL(job.url);const chunks:BlobPart[]=[];
- for(let i=0;i<segs.length;i++){const u=new URL(segs[i],base).toString();const rr=await fetch(proxyUrl(u,ph));if(!rr.ok)throw Error("Segment "+(i+1)+" failed ("+rr.status+")");chunks.push(await rr.blob());onUpdate(Math.min(99,((i+1)/segs.length)*100))}
+ for(let i=0;i<segs.length;i++){const u=segs[i].startsWith("/api/media/proxy")?new URL(segs[i],window.location.origin).toString():new URL(segs[i],base).toString();const rr=await fetch(u);if(!rr.ok)throw Error("Segment "+(i+1)+" failed ("+rr.status+")");chunks.push(await rr.blob());onUpdate(Math.min(99,((i+1)/segs.length)*100))}
  return URL.createObjectURL(new Blob(chunks,{type:"video/mp2t"}));
 }
 type Subtitle={url:string;lang?:string;label?:string;id?:string};
