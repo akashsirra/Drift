@@ -9,10 +9,13 @@ type Subtitle={url:string;lang?:string;label?:string;id?:string};
 function P(){
  const p=useSearchParams(),u=p.get("url")||"",t=p.get("title")||"Drift Player",ph=p.get("ph")||"",id=p.get("id")||"",type=p.get("type")||"movie",poster=p.get("poster")||"",episodeId=p.get("episodeId")||"",season=p.get("season")||"",episode=p.get("episode")||"";
  const videoRef=useRef<HTMLVideoElement|null>(null);
- const [error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0);
+ const [error,setError]=useState(""),[duration,setDuration]=useState(0),[resume,setResume]=useState(0),[fallbackIndex,setFallbackIndex]=useState(0),[fallbackName,setFallbackName]=useState("");
  const subs=useMemo<Subtitle[]>(()=>{try{return JSON.parse(atob(p.get("subs")||""))||[]}catch{return[]}},[p]);
- const isHls=/\.m3u8(\?|$)/i.test(u),isMedia=/\.(mp4|webm|ogg)(\?|$)/i.test(u);
+ const isHls=/\.m3u8(\?|$)/i.test(active),isMedia=/\.(mp4|webm|ogg)(\?|$)/i.test(active);
  const progressKey=episodeId?(type+":"+episodeId):(id?(type+":"+id):("url:"+u));
+ const [candidates,setCandidates]=useState<{url:string;name?:string;title?:string;behaviorHints?:Record<string,unknown>}[]>([]);
+ useEffect(()=>{try{const x=JSON.parse(localStorage.getItem("drift-stream-candidates")||"[]");if(Array.isArray(x))setCandidates(x.filter((s:any)=>s?.url))}catch{}},[]);
+ const active=candidates[fallbackIndex]?.url||u; const activeHints:any=candidates[fallbackIndex]?.behaviorHints||{}; const activePh=fallbackIndex&&activeHints.proxyHeaders?.request?btoa(JSON.stringify(activeHints.proxyHeaders.request)):ph;
 
  useEffect(()=>{const raw=localStorage.getItem("drift-progress");try{const all=raw?JSON.parse(raw):{};const item=all[progressKey];if(item?.position>5&&item?.position<Math.max(item.duration-30,0))setResume(item.position)}catch{}},[progressKey]);
 
@@ -23,15 +26,15 @@ function P(){
   const onTime=()=>{if(Math.floor(v.currentTime)%5===0)save()};
   v.addEventListener("timeupdate",onTime);v.addEventListener("pause",save);v.addEventListener("ended",()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");delete all[progressKey];localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}});
   if(isHls){
-   if(Hls.isSupported()){const h=new Hls({enableWorker:false});h.loadSource("/api/media/proxy?url="+encodeURIComponent(u)+(ph?"&ph="+encodeURIComponent(ph):""));h.attachMedia(v);h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal)setError("HLS playback failed. The source may require authorization or headers that a browser cannot supply.")});return()=>{h.destroy();v.removeEventListener("timeupdate",onTime);v.removeEventListener("pause",save)}}
-   if(v.canPlayType("application/vnd.apple.mpegurl")){v.src=u}else setError("This browser does not support HLS playback.");
-  }else if(isMedia)v.src=u;else setError("This stream is not a browser-native media URL.");
+   if(Hls.isSupported()){const h=new Hls({enableWorker:false});h.loadSource("/api/media/proxy?url="+encodeURIComponent(active)+(activePh?"&ph="+encodeURIComponent(activePh):""));h.attachMedia(v);h.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal){if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("This stream failed. Trying another available stream…")}else setError("HLS playback failed. All available streams failed.")}});return()=>{h.destroy();v.removeEventListener("timeupdate",onTime);v.removeEventListener("pause",save)}}
+   if(v.canPlayType("application/vnd.apple.mpegurl")){v.src=active}else setError("This browser does not support HLS playback.");
+  }else if(isMedia)v.src=active;else setError("This stream is not a browser-native media URL.");
   return()=>{v.removeEventListener("timeupdate",onTime);v.removeEventListener("pause",save)};
- },[u,isHls,isMedia,ph,progressKey,duration,t,type,poster,subs]);
+ },[active,isHls,isMedia,activePh,progressKey,duration,t,type,poster,subs,fallbackIndex,candidates.length]);
 
  useEffect(()=>{const v=videoRef.current;if(v&&resume>0){const set=()=>{try{v.currentTime=resume}catch{}};if(v.readyState>=1)set();else v.addEventListener("loadedmetadata",set,{once:true});return()=>v.removeEventListener("loadedmetadata",set)}},[resume]);
 
- return <main className="watch"><a className="back" href="/">← Drift</a><h1>{t}</h1>
+ return <main className="watch"><a className="back" href="/">← Drift</a><h1>{t}</h1>{fallbackName&&<p className="resumeNote">{fallbackName}</p>}
  {isHls||isMedia?<><video ref={videoRef} className="video" controls autoPlay playsInline preload="metadata" onLoadedMetadata={e=>setDuration(e.currentTarget.duration)}/>
  {subs.length>0&&<SubtitleMenu subs={subs} ph={ph}/>}
  {resume>0&&<p className="resumeNote">Resuming from {Math.floor(resume/60)}:{String(Math.floor(resume%60)).padStart(2,"0")}</p>}
