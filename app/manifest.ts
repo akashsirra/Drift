@@ -1,0 +1,18 @@
+import type {MetadataRoute} from "next";
+
+export default function manifest():MetadataRoute.Manifest{
+  return {
+    name:"Drift",
+    short_name:"Drift",
+    description:"Your content. Your addons.",
+    start_url:"/",
+    scope:"/",
+    display:"standalone",
+    orientation:"portrait-primary",
+    background_color:"#08090c",
+    theme_color:"#08090c",
+    icons:[
+      {src:"/icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable"}
+    ]
+  };
+}
