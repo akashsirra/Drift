@@ -1,7 +1,31 @@
 import {NextRequest,NextResponse} from "next/server";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
+
+export const runtime="nodejs";
+const execFileAsync=promisify(execFile);
 
 function isHttp(u:string){return u.startsWith("http://")||u.startsWith("https://")}
 function absolute(raw:string,base:string){try{return new URL(raw,base).toString()}catch{return raw}}
+
+async function curlText(url:string,headers:Record<string,string>){
+  const args=["-L","--compressed","--silent","--show-error","--max-time","25"];
+  for(const [k,v] of Object.entries(headers))args.push("-H",k+": "+v);
+  args.push("-w","\\n__DRIFT_STATUS__:%{http_code}",url);
+  try{
+    const r=await execFileAsync(process.env.DRIFT_CURL_PATH||"curl",args,{maxBuffer:8*1024*1024});
+    const raw=String(r.stdout||"");
+    const marker="\\n__DRIFT_STATUS__:";
+    const at=raw.lastIndexOf(marker);
+    if(at<0)return null;
+    return {status:Number(raw.slice(at+marker.length).trim())||0,body:raw.slice(0,at)};
+  }catch(e){
+    const r=e as any,raw=String(r.stdout||"");
+    const marker="\\n__DRIFT_STATUS__:",at=raw.lastIndexOf(marker);
+    if(at>=0)return {status:Number(raw.slice(at+marker.length).trim())||0,body:raw.slice(0,at)};
+    return null;
+  }
+}
 
 function decodeHeaders(raw:string){
   if(!raw)return {} as Record<string,string>;
@@ -47,7 +71,7 @@ const upstream=await fetch(target,{headers:requestHeaders,cache:"no-store",redir
     const ct=upstream.headers.get("content-type")||"application/octet-stream";
     if(!upstream.ok)return new NextResponse(await upstream.text(),{status:upstream.status,headers:{"content-type":ct}});
     if(ct.includes("mpegurl")||target.pathname.toLowerCase().endsWith(".m3u8")){
-      const text=await upstream.text(),base=upstream.url||target.toString();
+      const text=curlBody!==null?curlBody:await upstream.text(),base=upstream.url||target.toString();
       const upstreamCookies=typeof (upstream.headers as any).getSetCookie==="function"?(upstream.headers as any).getSetCookie():[];
 const cookieValue=upstreamCookies.map((x:string)=>x.split(";")[0]).filter(Boolean).join("; ");
 const cookieToken=cookieValue?Buffer.from(cookieValue,"utf8").toString("base64url"):mc;
