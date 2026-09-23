@@ -26,7 +26,21 @@ export async function GET(req:NextRequest){
   try{
     const target=new URL(raw);
     const headers=decodeHeaders(ph);
-    const upstream=await fetch(target,{headers:{"user-agent":"Drift/0.1","accept":"*/*",...headers},cache:"no-store",redirect:"follow"});
+    const requestHeaders:Record<string,string>={
+  "user-agent":"Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36",
+  "accept":"*/*",
+  "accept-language":"en-US,en;q=0.9",
+  ...headers
+};
+if(headers.Referer||headers.referer){
+  const ref=headers.Referer||headers.referer;
+  requestHeaders["Referer"]=ref;
+  try{requestHeaders["Origin"]=new URL(ref).origin}catch{}
+}
+requestHeaders["sec-fetch-site"]="cross-site";
+requestHeaders["sec-fetch-mode"]="cors";
+requestHeaders["sec-fetch-dest"]="empty";
+const upstream=await fetch(target,{headers:requestHeaders,cache:"no-store",redirect:"follow"});
     const ct=upstream.headers.get("content-type")||"application/octet-stream";
     if(!upstream.ok)return new NextResponse(await upstream.text(),{status:upstream.status,headers:{"content-type":ct}});
     if(ct.includes("mpegurl")||target.pathname.toLowerCase().endsWith(".m3u8")){
