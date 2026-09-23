@@ -92,3 +92,17 @@ header input:focus{border-color:#555d6d;background:#181b23}
 .modalBackdrop{position:absolute;inset:0;background-size:cover;background-position:center;filter:blur(22px);opacity:.22;transform:scale(1.08);pointer-events:none}
 .modal:before{content:"";position:absolute;inset:0;background:rgba(0,0,0,.45);pointer-events:none}
 .modalCard{z-index:1}
+
+/* Mobile player controls: keep menus inside the viewport */
+@media(max-width:650px){
+  .playerShell{overflow:visible}
+  .controlsOverlay{overflow:visible}
+  .controlBar{flex-wrap:nowrap;overflow-x:auto;overflow-y:visible;scrollbar-width:none;padding-bottom:2px}
+  .controlBar::-webkit-scrollbar{display:none}
+  .controlBar>*{flex:0 0 auto}
+  .menuBox{position:relative}
+  .moreMenu{left:0;right:auto;bottom:45px;min-width:170px}
+  .controlBar .menuBox:last-of-type .popMenu{right:0}
+  .popMenu{max-width:calc(100vw - 24px)}
+  .popMenu button{white-space:nowrap}
+}
