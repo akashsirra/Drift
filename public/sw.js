@@ -1,4 +1,4 @@
-const CACHE="drift-shell-v2";
+const CACHE="drift-shell-v3";
 const SHELL=["/","/library","/addons","/downloads"];
 
 self.addEventListener("install",(event)=>{
@@ -33,11 +33,11 @@ self.addEventListener("fetch",(event)=>{
 
   if(url.pathname.startsWith("/_next/")||url.pathname.startsWith("/icon.svg")){
     event.respondWith(
-      caches.match(request).then(cached=>cached||fetch(request).then(response=>{
+      fetch(request).then(response=>{
         const copy=response.clone();
         caches.open(CACHE).then(cache=>cache.put(request,copy)).catch(()=>{});
         return response;
-      }))
+      }).catch(()=>caches.match(request))
     );
   }
 });
