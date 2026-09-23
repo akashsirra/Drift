@@ -49,8 +49,16 @@ export default function Home(){
  useEffect(()=>{try{setAddons(JSON.parse(localStorage.getItem(KEY)||"[]"))}catch{}},[]);
  useEffect(()=>{
   const resetSearch=()=>setQuery("");
+  // Clear before the page is frozen for browser back/forward cache.
+  window.addEventListener("pagehide",resetSearch);
   window.addEventListener("pageshow",resetSearch);
-  return()=>window.removeEventListener("pageshow",resetSearch);
+  window.addEventListener("popstate",resetSearch);
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")resetSearch()});
+  return()=>{
+    window.removeEventListener("pagehide",resetSearch);
+    window.removeEventListener("pageshow",resetSearch);
+    window.removeEventListener("popstate",resetSearch);
+  };
  },[]);
  function save(a:Addon[]){setAddons(a);localStorage.setItem(KEY,JSON.stringify(a))}
  async function install(){setError("");setNotice("");setLoading(true);try{const normalized=normalizeAddonUrl(url);const r=await fetch("/api/addon/manifest?url="+encodeURIComponent(normalized));const j=await r.json();if(!r.ok)throw Error(j.error||"Could not load addon");if(!j.id||!j.name)throw Error("The URL did not return a valid addon manifest.");const a={...j,url:normalized};save([...addons.filter(x=>x.url!==normalized),a]);setUrl("");setNotice("Installed “"+j.name+"”. "+((j.catalogs||[]).length===0?"This is a stream-only addon; use Stream Resolver below or open a title from another catalog.":""))}catch(e){setError(e instanceof Error?e.message:"Failed to install addon")}finally{setLoading(false)}}
