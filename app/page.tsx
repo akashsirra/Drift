@@ -5,7 +5,7 @@ import {useEffect,useState} from "react";
 type Extra={name:string;isRequired?:boolean;options?:string[]};
 type Addon={id:string;name:string;description?:string;logo?:string;url:string;resources?:unknown[];catalogs?:{id:string;type:string;name:string;extra?:Extra[]}[];types?:string[];idPrefixes?:string[];behaviorHints?:{configurable?:boolean};config?:unknown[]};
 type Meta={id:string;type:string;name:string;poster?:string;background?:string;description?:string;releaseInfo?:string;genres?:string[];videos?:{id:string;title:string;released?:string;thumbnail?:string}[]};
-type Stream={name?:string;title?:string;url?:string;ytId?:string;infoHash?:string;externalUrl?:string;behaviorHints?:Record<string,unknown>};
+type Stream={name?:string;title?:string;url?:string;ytId?:string;infoHash?:string;externalUrl?:string;behaviorHints?:Record<string,unknown>;subtitles?:{url:string;lang?:string;label?:string;id?:string}[]};
 
 const KEY="drift-addons",LIB="drift-library";
 
