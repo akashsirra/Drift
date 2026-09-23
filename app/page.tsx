@@ -73,14 +73,23 @@ export default function Home(){
         return raw.filter((s:Stream)=>streamIsFresh(s.url)).map((s:Stream)=>({...s,__addon:x.name}));
       }catch{return []}
     }));
-    const merged=results.flat();setStreams(merged);
-    setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this title.");
+    let merged=results.flat();
+    if(!merged.length){
+      setNotice("Refreshing stream source…");
+      const retry=await Promise.all(streamAddons.map(async x=>{
+        try{return (await fetchAddonStreams(x.url,full.type,full.id)).filter((s:Stream)=>streamIsFresh(s.url)).map((s:Stream)=>({...s,__addon:x.name}));}
+        catch{return []}
+      }));
+      merged=retry.flat();
+    }
+    setStreams(merged);
+    setNotice(merged.length?"Fresh streams found from installed stream addon(s).":"No fresh playable streams were returned for this title.");
   }catch(e){setError(e instanceof Error?e.message:"Failed to resolve title")}
  } async function resolveStreamsFor(m:Meta,requestId?:string,titleOverride?:string){setStreams([]);setError("");setNotice("");const providers=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!providers.length){setNotice("No stream addon is installed.");return}const requestedId=requestId||m.id;const video=m.videos?.find(v=>v.id===requestedId);const results=await Promise.all(providers.map(async x=>{try{const raw=await fetchAddonStreams(x.url,m.type,requestedId);return raw.filter((s:Stream)=>streamIsFresh(s.url)).map((s:Stream)=>({...s,__addon:x.name,__videoId:requestedId,__season:video?.season,__episode:video?.episode}))}catch{return[]}}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this episode.");if(titleOverride)setSelected({...m,name:titleOverride})}
  async function openEpisode(m:Meta,v:{id:string;title:string;season?:number;episode?:number}){await resolveStreamsFor(m,v.id,m.name+" — "+v.title)}
  async function resolveId(){if(!testId.trim()){setError("Enter a movie/series ID, for example an IMDb tt ID.");return}setError("");setNotice("");setTesting(true);setStreams([]);const streamAddons=addons.filter(a=>Array.isArray(a.resources)&&a.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!streamAddons.length){setError("Install a stream-capable addon first.");setTesting(false);return}try{const results=await Promise.all(streamAddons.map(async a=>{const raw=await fetchAddonStreams(a.url,testType,testId.trim());return raw.filter((s:Stream)=>streamIsFresh(s.url)).map((s:Stream)=>({...s,__addon:a.name}))}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Found "+merged.length+" fresh stream(s) across installed addons.":"No fresh playable streams were returned for that ID.")}catch(e){setError(e instanceof Error?e.message:"Stream resolution failed")}finally{setTesting(false)}}
  function library(){if(!selected)return;const old=JSON.parse(localStorage.getItem(LIB)||"[]");if(!old.some((x:Meta)=>x.id===selected.id))localStorage.setItem(LIB,JSON.stringify([...old,selected]));setNotice("Added to Library.")}
- const streamLinks=(items:Stream[],title:string,meta?:Meta)=> <div className="streams">{items.map((s,i)=>s.url?<a key={i} href={watchHref(s,title,meta,addons)} onClick={()=>{try{localStorage.setItem("drift-stream-candidates",JSON.stringify(items.filter(x=>x.url).slice(0,12)))}catch{}}} className="stream">{s.name||s.title||"Play"} ▶</a>:s.externalUrl?<a key={i} href={s.externalUrl} target="_blank" rel="noreferrer" className="stream">{s.name||s.title||"Open external"} ↗</a>:<span key={i} className="stream">{s.name||s.title||s.infoHash||"Unsupported stream transport"}</span>)}</div>;
+ const streamLinks=(items:Stream[],title:string,meta?:Meta)=> <div className="streams">{items.map((s,i)=>s.url?<a key={i} href={watchHref(s,title,meta,addons)} onClick={()=>{try{localStorage.setItem("drift-stream-candidates",JSON.stringify(items.filter(x=>x.url&&streamIsFresh(x.url)).slice(0,12)))}catch{}}} className="stream">{s.name||s.title||"Play"} ▶</a>:s.externalUrl?<a key={i} href={s.externalUrl} target="_blank" rel="noreferrer" className="stream">{s.name||s.title||"Open external"} ↗</a>:<span key={i} className="stream">{s.name||s.title||s.infoHash||"Unsupported stream transport"}</span>)}</div>;
  return <main>
   <header><a href="/" className="brand">DRIFT</a><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your addons..."/><a className="nav" href="/library">Library</a><a className="nav" href="/downloads">Downloads</a><a className="nav" href="/addons">Addons</a></header>
   <section className="hero"><span className="eyebrow">YOUR CONTENT. YOUR ADDONS.</span><h1>One home for your media.</h1><p>Install compatible addons, browse catalogs and resolve streams in one clean interface.</p></section>\n  <ContinueWatching/>
