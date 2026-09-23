@@ -1,6 +1,7 @@
 import "./globals.css";
 import type {Metadata,Viewport} from "next";
 import PwaRegister from "./pwa-register";
+import MobileNav from "./mobile-nav";
 
 export const metadata:Metadata={
   title:"Drift — Your content. Your addons.",
@@ -19,5 +20,5 @@ export const viewport:Viewport={
 };
 
 export default function RootLayout({children}:{children:React.ReactNode}){
-  return <html lang="en"><body>{children}<PwaRegister/></body></html>;
+  return <html lang="en"><body>{children}<MobileNav/><PwaRegister/></body></html>;
 }
