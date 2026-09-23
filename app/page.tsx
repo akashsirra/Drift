@@ -50,69 +50,75 @@ export default function Home(){
  function save(a:Addon[]){setAddons(a);localStorage.setItem(KEY,JSON.stringify(a))}
  async function install(){setError("");setNotice("");setLoading(true);try{const normalized=normalizeAddonUrl(url);const r=await fetch("/api/addon/manifest?url="+encodeURIComponent(normalized));const j=await r.json();if(!r.ok)throw Error(j.error||"Could not load addon");if(!j.id||!j.name)throw Error("The URL did not return a valid addon manifest.");const a={...j,url:normalized};save([...addons.filter(x=>x.url!==normalized),a]);setUrl("");setNotice("Installed “"+j.name+"”. "+((j.catalogs||[]).length===0?"This is a stream-only addon; use Stream Resolver below or open a title from another catalog.":""))}catch(e){setError(e instanceof Error?e.message:"Failed to install addon")}finally{setLoading(false)}}
  async function openMeta(a:Addon,m:Meta){
-  setSelected(m);setSelectedAddon(a);setSelectedSeason(1);setStreams([]);setError("");setNotice("Resolving streams…");setResolving(true);
-  try{
-    const metaResult=await fetch("/api/addon/resource?addon="+encodeURIComponent(a.url)+"&resource=meta&type="+m.type+"&id="+encodeURIComponent(m.id));
-    let full:Meta=m;
-    if(metaResult.ok){const j=await metaResult.json();full=j.meta?.[0]||m}
-    if(full.type==="series"){
-      try{
-        const er=await fetch("/api/series/episodes?imdb="+encodeURIComponent(full.id));
-        if(er.ok){
-          const ej=await er.json();
-          const fallback=(ej.seasons||[]).flatMap((x:any)=>x.episodes||[]);
-          const map=new Map<string,any>();
-          for(const v of (full.videos||[]))map.set(v.id,v);
-          for(const v of fallback)if(!map.has(v.id))map.set(v.id,v);
-          full={...full,videos:[...map.values()].sort((x:any,y:any)=>(x.season||0)-(y.season||0)||(x.episode||0)-(y.episode||0))};
-          const first=full.videos?.find(v=>(v.season||0)>0)?.season;
-          if(first)setSelectedSeason(first);
-        }
-      }catch{}
-    }
-    setSelected(full);
-    const streamAddons=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));
-    if(!streamAddons.length){setNotice("No stream addon is installed. Install a stream-capable addon to get Play options.");return}
-    setNotice("Finding the first playable stream…");
+  // Show the detail surface immediately. Stream resolution and metadata enrichment run in parallel.
+  setSelected(m);setSelectedAddon(a);setSelectedSeason(1);setStreams([]);setError("");setNotice("Finding a playable stream…");setResolving(true);
+
+  const streamAddons=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));
+  const resolveFirst=async()=>{
+    if(!streamAddons.length)return {addon:"",streams:[] as Stream[]};
     const pending=streamAddons.map(async x=>{
       try{
-        const raw=await fetchAddonStreams(x.url,full.type,full.id);
-        return {addon:x.name,streams:raw.map((s:Stream)=>({...s,__addon:x.name}))};
+        const raw=await fetchAddonStreams(x.url,m.type,m.id);
+        return {addon:x.name,streams:raw.map((item:Stream)=>({...item,__addon:x.name,__videoId:m.id}))};
       }catch{return {addon:x.name,streams:[] as Stream[]}}
     });
-    const firstPlayable=new Promise<{addon:string;streams:Stream[]}>(resolve=>{
-      let remaining=pending.length;
-      let done=false;
-      for(const p of pending){
-        p.then(result=>{
-          if(done)return;
-          if(result.streams.some(s=>Boolean(s.url))){
-            done=true;
-            resolve(result);
-            return;
-          }
-          remaining--;
-          if(remaining===0){
-            done=true;
-            resolve({addon:"",streams:[]});
-          }
-        }).catch(()=>{
-          remaining--;
-          if(!done&&remaining===0){
-            done=true;
-            resolve({addon:"",streams:[]});
-          }
-        });
-      }
+    const winner=await new Promise<{addon:string;streams:Stream[]}>(resolve=>{
+      let remaining=pending.length,done=false;
+      pending.forEach(p=>p.then(result=>{
+        if(done)return;
+        if(result.streams.some(item=>Boolean(item.url))){done=true;resolve(result);return}
+        remaining--;
+        if(remaining===0){done=true;resolve({addon:"",streams:[]})}
+      }).catch(()=>{
+        remaining--;
+        if(!done&&remaining===0){done=true;resolve({addon:"",streams:[]})}
+      }));
+      setTimeout(()=>{if(!done){done=true;resolve({addon:"",streams:[]})}},15000);
     });
-    const timeout=new Promise<{addon:string;streams:Stream[]}>(resolve=>setTimeout(()=>resolve({addon:"",streams:[]}),16000));
-    const winner=await Promise.race([firstPlayable,timeout]);
-    const merged=winner.streams;
-    setStreams(merged);
-    const playable=merged.filter((s:Stream)=>Boolean(s.url)).length;
-    const external=merged.filter((s:Stream)=>!s.url&&Boolean(s.externalUrl)).length;
-    setNotice(merged.length?("Ready: "+playable+" playable stream"+(playable===1?"":"s")+(external?" · "+external+" external":"")+" from "+winner.addon+"."):"No stream entries were returned within 16 seconds.");
-  }catch(e){setError(e instanceof Error?e.message:"Failed to resolve title")}finally{setResolving(false)}
+    return winner;
+  };
+
+  const streamPromise=resolveFirst();
+  const metaPromise=(async()=>{
+    try{
+      const metaResult=await fetch("/api/addon/resource?addon="+encodeURIComponent(a.url)+"&resource=meta&type="+m.type+"&id="+encodeURIComponent(m.id),{cache:"no-store"});
+      let full:Meta=m;
+      if(metaResult.ok){const j=await metaResult.json();full=j.meta?.[0]||m}
+      if(full.type==="series"){
+        try{
+          const er=await fetch("/api/series/episodes?imdb="+encodeURIComponent(full.id),{cache:"no-store"});
+          if(er.ok){
+            const ej=await er.json();
+            const fallback=(ej.seasons||[]).flatMap((x:any)=>x.episodes||[]);
+            const map=new Map<string,any>();
+            for(const v of (full.videos||[]))map.set(v.id,v);
+            for(const v of fallback)if(!map.has(v.id))map.set(v.id,v);
+            full={...full,videos:[...map.values()].sort((x:any,y:any)=>(x.season||0)-(y.season||0)||(x.episode||0)-(y.episode||0))};
+          }
+        }catch{}
+      }
+      return full;
+    }catch{return m}
+  })();
+
+  // Whichever finishes first updates its part of the UI; neither blocks the other.
+  metaPromise.then(full=>{
+    setSelected(full);
+    const first=full.videos?.find(v=>(v.season||0)>0)?.season;
+    if(first)setSelectedSeason(first);
+  });
+  const winner=await streamPromise;
+  if(winner.streams.length){
+    setStreams(winner.streams);
+    const playable=winner.streams.filter(item=>Boolean(item.url)).length;
+    const external=winner.streams.filter(item=>!item.url&&Boolean(item.externalUrl)).length;
+    setNotice("Ready: "+playable+" playable stream"+(playable===1?"":"s")+(external?" · "+external+" external":"")+" from "+winner.addon+".");
+  }else if(!streamAddons.length){
+    setNotice("No stream addon is installed. Add a stream-capable addon to get Play options.");
+  }else{
+    setNotice("No playable stream returned yet.");
+  }
+  setResolving(false);
  } async function resolveStreamsFor(m:Meta,requestId?:string,titleOverride?:string){setStreams([]);setResolving(true);setError("");setNotice("");const providers=addons.filter(x=>Array.isArray(x.resources)&&x.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!providers.length){setNotice("No stream addon is installed.");return}const requestedId=requestId||m.id;const video=m.videos?.find(v=>v.id===requestedId);const results=await Promise.all(providers.map(async x=>{try{const raw=await fetchAddonStreams(x.url,m.type,requestedId);return raw.map((s:Stream)=>({...s,__addon:x.name,__videoId:requestedId,__season:video?.season,__episode:video?.episode}))}catch{return[]}}));const merged=results.flat();setStreams(merged);setNotice(merged.length?"Streams found from installed stream addon(s).":"No streams were returned for this episode.");if(titleOverride)setSelected({...m,name:titleOverride});setResolving(false)}
  async function openEpisode(m:Meta,v:{id:string;title:string;season?:number;episode?:number}){await resolveStreamsFor(m,v.id,m.name+" — "+v.title)}
  async function resolveId(){if(!testId.trim()){setError("Enter a movie/series ID, for example an IMDb tt ID.");return}setError("");setNotice("");setTesting(true);setStreams([]);const streamAddons=addons.filter(a=>Array.isArray(a.resources)&&a.resources.some((r:any)=>r==="stream"||(r?.name==="stream")));if(!streamAddons.length){setError("Install a stream-capable addon first.");setTesting(false);return}try{const results=await Promise.all(streamAddons.map(async a=>{const raw=await fetchAddonStreams(a.url,testType,testId.trim());return raw.map((s:Stream)=>({...s,__addon:a.name}))}));const merged=results.flat();setStreams(merged);const playable=merged.filter((s:Stream)=>Boolean(s.url)).length;setNotice(merged.length?"Found "+merged.length+" stream option(s) across installed addons ("+playable+" direct).":"No stream entries were returned for that ID.")}catch(e){setError(e instanceof Error?e.message:"Stream resolution failed")}finally{setTesting(false)}}
