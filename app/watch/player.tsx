@@ -47,7 +47,7 @@ function P(){
     }
   }catch{}
  },[]);
- const active=candidates[fallbackIndex]?.url||u,activeHints:any=candidates[fallbackIndex]?.behaviorHints||{},activePh=fallbackIndex&&activeHints.proxyHeaders?.request?btoa(JSON.stringify(activeHints.proxyHeaders.request)):ph;
+ const active=candidates[fallbackIndex]?.url||u,activeHints:any=candidates[fallbackIndex]?.behaviorHints||{},activePh=activeHints.proxyHeaders?.request?btoa(JSON.stringify(activeHints.proxyHeaders.request)):ph;
  const isHls=/\.m3u8(\?|$)/i.test(active),isMedia=/\.(mp4|webm|ogg)(\?|$)/i.test(active);
  useEffect(()=>setMounted(true),[]);
  const touchControls=()=>{setShowControls(true);if(hideRef.current)clearTimeout(hideRef.current);hideRef.current=setTimeout(()=>setShowControls(false),3500)};
