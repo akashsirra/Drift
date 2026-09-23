@@ -54,7 +54,7 @@ function P(){
  useEffect(()=>{touchControls();return()=>{if(hideRef.current)clearTimeout(hideRef.current)}},[]);
  useEffect(()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");const item=all[progressKey];if(item?.position>5&&item?.position<Math.max(item.duration-30,0))setResume(item.position)}catch{}},[progressKey]);
  useEffect(()=>{
-  if(inputExpired){
+  if(inputExpired&&streamIsExpired(active)){
     return;
   }
   const v=videoRef.current;if(!v||!u)return;setError("");const save=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");all[progressKey]={id,type,title:t,poster,url:u,ph,subs,episodeId,season,episode,addons:addonUrls,position:v.currentTime||0,duration:v.duration||duration,updatedAt:Date.now()};localStorage.setItem("drift-progress",JSON.stringify(all))}catch{}};const onTime=()=>{setCurrent(v.currentTime);if(Math.floor(v.currentTime)%5===0)save()};const onPlay=()=>setPlaying(true),onPause=()=>{setPlaying(false);save()};const onLoaded=()=>{setDuration(v.duration||0);if(resume>0&&resume<v.duration-30){try{v.currentTime=resume}catch{}}};const onEnded=()=>{try{const all=JSON.parse(localStorage.getItem("drift-progress")||"{}");delete all[progressKey];localStorage.setItem("drift-progress",JSON.stringify(all))}catch{};if(nextId)setNextCountdown(5)};const onVideoError=()=>{if(fallbackIndex+1<candidates.length){setFallbackIndex(x=>x+1);setFallbackName(candidates[fallbackIndex+1].name||candidates[fallbackIndex+1].title||"another stream");setError("Playback failed. Trying another available stream…")}else setError("The video could not be played. The stream may have expired or rejected the request.")};
@@ -71,7 +71,7 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
  },[active,isHls,isMedia,activePh,progressKey,t,type,poster,subs,fallbackIndex,candidates.length,resume,nextId,inputExpired]);
 
  useEffect(()=>{
-  if(!inputExpired||!requestId||!addonUrls.length)return;
+  if(!inputExpired||!streamIsExpired(active)||!requestId||!addonUrls.length)return;
   let cancelled=false;
   setRefreshing(true);
   setError("Refreshing expired stream…");
@@ -82,7 +82,7 @@ h.on(Hls.Events.AUDIO_TRACK_SWITCHED,(_,data)=>setAudioTrack(data.id));h.loadSou
     if(!cancelled)setError("The previous stream expired and the addon refresh failed.");
   });
   return()=>{cancelled=true};
- },[inputExpired,requestId,type,addonKey]);
+ },[inputExpired,active,requestId,type,addonKey]);
 
  useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(["INPUT","TEXTAREA","SELECT"].includes((e.target as HTMLElement)?.tagName))return; if(e.key===" "){e.preventDefault();togglePlay()}else if(e.key==="ArrowLeft")seek(e.shiftKey?-30:-10);else if(e.key==="ArrowRight")seek(e.shiftKey?30:10);else if(e.key.toLowerCase()==="f")toggleFullscreen();else if(e.key.toLowerCase()==="m"){const v=videoRef.current;if(v){v.muted=!v.muted;setVolume(v.muted?0:v.volume)}}else if(e.key.toLowerCase()==="p")togglePip();else if(e.key==="+"||e.key==="=")changeZoom(zoom+.1);else if(e.key==="-")changeZoom(zoom-.1);};window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey)},[zoom]);
  useEffect(()=>{if(!nextCountdown)return;const timer=setTimeout(()=>{if(nextCountdown<=1)goNext();else setNextCountdown(x=>x-1)},1000);return()=>clearTimeout(timer)},[nextCountdown]);
